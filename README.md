@@ -442,27 +442,33 @@ Full endpoint reference: [`documentation/TENSA_REFERENCE.md`](documentation/TENS
 
 ## Docker — engine, Studio, and the bundle
 
-TENSA ships as separate Docker images. Pull what you need, deploy what you want.
+TENSA ships as **two separate Docker images**, both published to GitHub Container Registry. Pull what you need, deploy what you want — bundled compose for evaluation, individual images for production.
 
 | Image | What it is | Source |
 |---|---|---|
-| `ghcr.io/arperon-labs/tensa` | The engine — REST API, MCP, RocksDB, every analytical layer. | Open source — Dockerfile at [`docker/`](docker/), reproducibly built from this repo. |
-| `ghcr.io/arperon-labs/tensa-studio` | The web UI — React/TypeScript console served by nginx. | Distributed as **Docker image only**; source is not currently published. |
+| [`ghcr.io/arperon-labs/tensa`](https://github.com/orgs/arperon-labs/packages/container/package/tensa) | The engine — REST API, MCP, RocksDB, every analytical layer. ~90-130 MB. | **Open source.** Dockerfile in [`docker/`](docker/); reproducibly buildable from this repo. |
+| [`ghcr.io/arperon-labs/tensa-studio`](https://github.com/orgs/arperon-labs/packages/container/package/tensa-studio) | The web UI — React/TypeScript console served by nginx. ~60-90 MB. | **Docker image only.** Source not currently published; see [About Studio's source](#about-studios-source) below. |
+
+### TL;DR — fastest path to a running TENSA
+
+```bash
+git clone https://github.com/arperon-labs/tensa.git
+cd tensa
+cp docker-bundle/.env.example docker-bundle/.env
+# Edit docker-bundle/.env — set ONE LLM provider (LOCAL_LLM_URL / OPENROUTER_API_KEY / ANTHROPIC_API_KEY)
+docker compose -f docker-bundle/docker-compose.yml up -d
+open http://localhost:8080
+```
+
+That pulls both images (~150 MB total), spins up engine + Studio on a private bridge network, persists RocksDB to a named volume, and routes `/api/*` from Studio to the engine internally. **No CORS to configure, no compile, no Rust toolchain required.** First-time bring-up: ~60 seconds.
+
+Full bundle docs: [`docker-bundle/README.md`](docker-bundle/README.md).
 
 ### Three deployment paths
 
-**1. Bundle — fastest evaluation (pull + run, ~60 seconds).** Brings up engine + Studio together with persistent storage and the right networking out of the box.
+**Path A — Bundle (engine + Studio together).** The recipe above. Right answer for evaluation, single-host deployments, demos, and CI. Bundled compose at [`docker-bundle/docker-compose.yml`](docker-bundle/docker-compose.yml). One command brings the whole stack up.
 
-```bash
-cp docker-bundle/.env.example docker-bundle/.env
-$EDITOR docker-bundle/.env                 # set ONE LLM provider
-docker compose -f docker-bundle/docker-compose.yml up -d
-open http://localhost:8080                 # Studio UI
-```
-
-Full instructions: [`docker-bundle/README.md`](docker-bundle/README.md).
-
-**2. Engine only — headless, custom integration.** Pull the published image and run it directly (or build it yourself from source via [`docker/`](docker/)):
+**Path B — Engine only (headless / programmatic / MCP).** Pull and run just `tensa-core`. Right answer for researchers integrating TENSA into a Python pipeline, for MCP-only deployments where Claude Desktop is the UI, or for backend services that don't need a browser console.
 
 ```bash
 docker run -d --name tensa \
@@ -472,36 +478,104 @@ docker run -d --name tensa \
   -e TENSA_MODEL=anthropic/claude-sonnet-4 \
   ghcr.io/arperon-labs/tensa:latest
 
-curl http://localhost:3000/health
+curl http://localhost:3000/health      # {"status":"ok"}
 ```
 
-Build your own engine image: [`docker/README.md`](docker/README.md).
-
-**3. Studio only — point at an existing engine.** Useful if you already run the engine on dedicated infra and just want to add a UI:
+**Path C — Studio only (point at an external engine).** Pull and run just `tensa-studio` against an engine running elsewhere — on dedicated infra, on a remote host, or behind a load balancer. Right answer for production deployments where the engine and UI scale independently.
 
 ```bash
 docker run -d --name tensa-studio \
   -p 8080:8080 \
-  -e TENSA_API_URL=http://your-engine.example.com:3000 \
+  -e TENSA_API_URL=https://tensa-core.internal.example.com:3000 \
   ghcr.io/arperon-labs/tensa-studio:latest
 ```
 
+### Pinning a version (recommended for production)
+
+Always pin images. `latest` is convenient for evaluation; production reads as-of a specific commit.
+
+```yaml
+# docker-bundle/docker-compose.yml or your own compose
+services:
+  tensa-core:
+    image: ghcr.io/arperon-labs/tensa:0.79.2
+  tensa-studio:
+    image: ghcr.io/arperon-labs/tensa-studio:0.79.2
+```
+
+**Compatibility rule:** matching minor versions are guaranteed compatible. Patch-level skew within a minor (`0.79.2` engine + `0.79.5` Studio) is fine. Cross-minor compatibility is documented per release.
+
+### Updating
+
+```bash
+docker compose -f docker-bundle/docker-compose.yml pull
+docker compose -f docker-bundle/docker-compose.yml up -d
+```
+
+The `tensa-data` volume survives image upgrades — your KV store carries forward. To roll back, repin to a previous version tag and `up -d` again.
+
+### Persistence
+
+The engine's KV store lives in `/data` inside its container, which the bundle compose maps to a **named volume** (`tensa-data`). It survives `stop` / `restart` / `rm` / `down`. Only `down -v` (or `docker volume rm tensa-data`) destroys it. **Studio is stateless** — no volumes to mount, all state lives in the engine.
+
+If you run `docker run` directly without `-v`, Docker still creates an *anonymous* volume from the image's `VOLUME` directive — data survives container restarts but becomes orphaned if you `rm` the container. Always pass `-v tensa-data:/data` (or use compose) for findable persistence.
+
+### Building images yourself
+
+The engine source is open and the Dockerfile is reproducible from a clean clone. If you want custom feature combinations, additional patches, or your own registry:
+
+```bash
+# From the repo root
+./docker/build.sh                                  # tensa:latest, full feature set
+./docker/build.sh -t myreg/tensa:0.79.2 --push     # custom tag + push
+./docker/build.sh -f "server,mcp,rocksdb"          # trim feature set (~70 MB image)
+```
+
+Full engine-build docs: [`docker/README.md`](docker/README.md).
+
+Studio is **not** buildable from the public repo — its Dockerfile lives in the private repo because it `COPY`s the source. Pull the published image instead.
+
 ### Why separate images?
 
-Different audiences (researchers, MCP users, operational analysts) want different combinations. Different update cadences (engine ships rarely, Studio ships often). Different security postures (Studio renders untrusted content, the engine doesn't). Combined images would force every deployment into the slowest-moving component's release cycle. Separate images let each be updated, scaled, and patched independently.
+Different audiences want different combinations. Researchers running TENSA programmatically don't need Studio. Forensics analysts want everything wired together. MCP-from-Claude-Desktop users want the engine without a UI. Combined images would force every deployment to download every component.
 
-This pattern follows what mature server-software-with-UI projects do: Postgres/pgAdmin, Elasticsearch/Kibana, GitLab's component split. The bundle compose hides that complexity for evaluation users; production deployments use individual images and manage them per-component.
+Different update cadences. Engine ships rarely (analytical capabilities, performance, bug fixes). Studio ships more often (UX, visualizations, dashboards). Combined images would push every component's update onto the slowest one's release cycle.
+
+Different security postures. Studio is web-facing, accepts user input, renders untrusted content (entity descriptions, document text, web-fetched material). The engine processes data internally. Combined images would mean the most exposed component's vulnerabilities trigger updates for everything; separation lets you patch components independently.
+
+This pattern follows mature server-software-with-UI projects: Postgres/pgAdmin, Elasticsearch/Kibana, GitLab's component split. The bundle hides that complexity for evaluation; production deployments use individual images and manage them per-component.
+
+### Changing ports in Docker
+
+Both images listen on default ports (`3000` for the engine, `8080` for Studio). Easiest path: remap the host side, leave the container internals alone.
+
+```bash
+# Engine on host :8000, Studio on host :9090
+docker run -p 8000:3000 ghcr.io/arperon-labs/tensa:latest
+docker run -p 9090:8080 -e TENSA_API_URL=... ghcr.io/arperon-labs/tensa-studio:latest
+```
+
+For the bundle, set `STUDIO_HOST_PORT` in `.env` (Studio side) or edit the compose `ports:` mapping. Each image's healthcheck targets the **internal** port; if you change `TENSA_ADDR` or `STUDIO_PORT` inside the container, override the healthcheck or the container will go `unhealthy` even when serving correctly. Full details + caveats in [`docker/README.md`](docker/README.md) and [`docker-studio/README.md`](docker-studio/README.md) (private — runs against the engine in [`docker-bundle/README.md`](docker-bundle/README.md)).
 
 ### About Studio's source
 
-Studio is currently distributed **only as a Docker image** — its source is private. The decision was deliberate: the engine is open infrastructure (under AGPL-3.0 + commercial dual licensing), while the UI is a polished, application-grade artifact whose value is in the experience rather than the code. Image-only releases come with a few obligations:
+Studio is currently distributed **only as a Docker image** — source is not in this repo. The choice is deliberate: the engine is open infrastructure (AGPL-3.0 + commercial dual licensing), while the UI is a polished, application-grade artifact whose value is in the experience. Image-only releases come with obligations on our side:
 
 - The image must be of release quality from day one — users only see the running artifact.
-- Issue reports include reproduction steps + container logs (since users can't read source).
-- Images are signed and pinned to versions to give analysts and researchers traceable, verifiable artifacts.
-- For deployments that require source access (audited environments, custom UI builds), a commercial agreement covers that — see [`license/`](license/).
+- Issue reports for Studio include reproduction steps + container logs (since users can't read source).
+- Images are pinned to specific versions and reproducibly built from versioned binary artifacts; researchers can verify they're running known builds.
+- For deployments that require source access (audited environments, custom UI builds, regulated industries), a commercial agreement covers that — see [`license/`](license/) or email **info@arperon.com**.
 
-If you want a fully source-available console, the REST API is documented in [`documentation/TENSA_REFERENCE.md`](documentation/TENSA_REFERENCE.md) and stable; build your own UI on top of it.
+If you want a fully source-available console, the REST API is documented in [`documentation/TENSA_REFERENCE.md`](documentation/TENSA_REFERENCE.md) and stable. The `/api` contract Studio uses is identical to what's documented there — building a custom UI is a tractable project.
+
+### Reporting issues with the Studio image
+
+Open an issue in this repo with:
+- Studio image tag (e.g. `ghcr.io/arperon-labs/tensa-studio:0.79.2`) and engine tag if running against a specific version.
+- Browser + OS.
+- `docker logs tensa-studio` and `docker logs tensa-core` (with secrets redacted) for the relevant time window.
+- Reproduction steps — what URL / action triggered the issue.
+- Network errors from the browser DevTools console if the issue is API-related.
 
 ---
 
