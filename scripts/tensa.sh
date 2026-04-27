@@ -14,7 +14,7 @@ LOGDIR="$SCRIPT_DIR/.logs"
 mkdir -p "$PIDDIR" "$LOGDIR"
 
 SERVICE_NAME="api"
-SERVICE_PORT="4350"
+SERVICE_PORT="3000"
 FEATURES="server,studio-chat,embedding,inference,web-ingest,docparse,generation,adversarial,gemini,bedrock,mcp"
 
 # Colors

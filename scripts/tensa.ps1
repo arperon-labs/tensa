@@ -16,7 +16,7 @@ New-Item -ItemType Directory -Force -Path $PidDir | Out-Null
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
 $ServiceName = "api"
-$ServicePort = "4350"
+$ServicePort = "3000"
 $Features = "server,studio-chat,embedding,inference,web-ingest,docparse,generation,adversarial,gemini,bedrock,mcp"
 
 # --- Helpers ---

@@ -175,7 +175,7 @@ curl http://localhost:3000/health
 
 ### Service launcher (start / stop / status / logs)
 
-For day-to-day use, the repo ships a thin launcher under `scripts/` that builds with the full feature set, manages a pidfile in `.pids/`, and tails logs from `.logs/`. The API listens on port **4350** by default.
+For day-to-day use, the repo ships a thin launcher under `scripts/` that builds with the full feature set, manages a pidfile in `.pids/`, and tails logs from `.logs/`. The API listens on port **3000** by default (override with `TENSA_ADDR`).
 
 ```bash
 # Linux / macOS
