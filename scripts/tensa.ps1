@@ -16,7 +16,10 @@ New-Item -ItemType Directory -Force -Path $PidDir | Out-Null
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
 $ServiceName = "api"
-$ServicePort = "3000"
+# Honor TENSA_ADDR if the caller set it (e.g. "127.0.0.1:8080"). Otherwise
+# default to 0.0.0.0:3000 — the canonical bind address.
+$ServiceAddr = if ($env:TENSA_ADDR) { $env:TENSA_ADDR } else { "0.0.0.0:3000" }
+$ServicePort = if ($ServiceAddr -match ':(\d+)$') { $matches[1] } else { "3000" }
 $Features = "server,studio-chat,embedding,inference,web-ingest,docparse,generation,adversarial,gemini,bedrock,mcp"
 
 # --- Helpers ---
@@ -52,7 +55,7 @@ function Start-Api {
     $logFile = (Join-Path $LogDir "api.log") -replace '\\','/'
     $errFile = (Join-Path $LogDir "api.err.log") -replace '\\','/'
     $proc = Start-Process -FilePath "cmd.exe" `
-        -ArgumentList "/c","set TENSA_ADDR=0.0.0.0:$ServicePort&& cargo run --release --bin tensa-server --features $Features >$logFile 2>$errFile" `
+        -ArgumentList "/c","set TENSA_ADDR=$ServiceAddr&& cargo run --release --bin tensa-server --features $Features >$logFile 2>$errFile" `
         -WorkingDirectory $ScriptDir `
         -PassThru -WindowStyle Hidden
 

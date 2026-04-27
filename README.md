@@ -197,7 +197,35 @@ For day-to-day use, the repo ships a thin launcher under `scripts/` that builds 
 .\scripts\tensa.ps1 stop
 ```
 
-Both scripts are deliberately simple (one service, single launcher) — they wrap the same `cargo build --release --features ...` invocation shown above. If you need different ports, env vars, or feature combinations, run `cargo` directly.
+Both scripts are deliberately simple (one service, single launcher) — they wrap the same `cargo build --release --features ...` invocation shown above. For different feature combinations, run `cargo` directly.
+
+### Changing the port
+
+The bind address is governed by a single environment variable: **`TENSA_ADDR`**. No rebuild needed.
+
+```bash
+# cargo
+TENSA_ADDR=127.0.0.1:8080 cargo run --release --features server
+
+# launcher (Linux / macOS) — both the server and the status URL pick up the change
+TENSA_ADDR=127.0.0.1:8080 ./scripts/tensa.sh start
+
+# launcher (Windows)
+$env:TENSA_ADDR = "127.0.0.1:8080"
+.\scripts\tensa.ps1 start
+```
+
+```bash
+# Docker — easiest: remap the host port, leave the container internal at 3000
+docker run -p 8080:3000 tensa:latest
+
+# Docker — fully relocate (also keeps the healthcheck happy if you keep 3000 internal)
+docker run -p 8080:8080 -e TENSA_ADDR=0.0.0.0:8080 tensa:latest
+```
+
+For docker compose, edit the `ports:` mapping (`8080:3000`) — that's the only line you need to touch.
+
+> **Heads-up:** the Docker image's `HEALTHCHECK` hits `http://127.0.0.1:3000/health` *inside* the container. If you change the **internal** port via `-e TENSA_ADDR=0.0.0.0:8080`, the healthcheck will fail and the container will be marked `unhealthy` even though it's serving correctly. Either keep the container internal at 3000 (and remap the host port — the recommended path), or rebuild the image with a matching healthcheck.
 
 ### With an LLM provider
 

@@ -14,7 +14,10 @@ LOGDIR="$SCRIPT_DIR/.logs"
 mkdir -p "$PIDDIR" "$LOGDIR"
 
 SERVICE_NAME="api"
-SERVICE_PORT="3000"
+# Honor TENSA_ADDR if the caller set it (e.g. "127.0.0.1:8080"). Otherwise
+# default to 0.0.0.0:3000 — the canonical bind address.
+SERVICE_ADDR="${TENSA_ADDR:-0.0.0.0:3000}"
+SERVICE_PORT="${SERVICE_ADDR##*:}"
 FEATURES="server,studio-chat,embedding,inference,web-ingest,docparse,generation,adversarial,gemini,bedrock,mcp"
 
 # Colors
@@ -48,7 +51,7 @@ start_api() {
     fi
     echo -e "  ${CYAN}Starting TENSA API on :$SERVICE_PORT...${NC}"
     cd "$SCRIPT_DIR"
-    TENSA_ADDR="0.0.0.0:$SERVICE_PORT" \
+    TENSA_ADDR="$SERVICE_ADDR" \
     cargo run --release --bin tensa-server --features "$FEATURES" \
         > "$LOGDIR/api.log" 2>&1 &
     local pid=$!
