@@ -1,0 +1,57 @@
+TENSA is licensed under the GNU Affero General Public License v3.0
+(AGPL-3.0) OR a commercial license from Arperon s.r.o. See NOTICE
+for details on the dual-licensing scheme.
+
+The canonical text of AGPL-3.0 follows below. You can also retrieve
+it from https://www.gnu.org/licenses/agpl-3.0.txt (SHA-256 should be
+verified against the GNU copy).
+
+If you received this repository and the AGPL-3.0 text is missing,
+run:
+
+    curl -o LICENSE-AGPL https://www.gnu.org/licenses/agpl-3.0.txt
+
+and verify the checksum before relying on it.
+
+================================================================
+How to apply these terms to your files
+================================================================
+
+Each source file in TENSA carries the following header:
+
+    // SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Arperon-Commercial
+    //
+    // TENSA — Tensor Narrative Architecture
+    // Copyright (C) 2026 Arperon s.r.o.
+    //
+    // This file is part of TENSA. TENSA is free software: you can
+    // redistribute it and/or modify it under the terms of the GNU Affero
+    // General Public License as published by the Free Software Foundation,
+    // either version 3 of the License, or (at your option) any later
+    // version.
+    //
+    // Alternatively, this file may be used under the terms of a
+    // commercial license from Arperon s.r.o. See NOTICE and
+    // COMMERCIAL-LICENSE-TERMS.md.
+    //
+    // TENSA is distributed in the hope that it will be useful, but
+    // WITHOUT ANY WARRANTY; without even the implied warranty of
+    // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+    // Affero General Public License for more details.
+    //
+    // You should have received a copy of the GNU Affero General Public
+    // License along with this program. If not, see
+    // <https://www.gnu.org/licenses/>.
+
+================================================================
+BEGIN AGPL-3.0 CANONICAL TEXT
+================================================================
+
+[Paste the verbatim text of GNU Affero General Public License v3.0
+from https://www.gnu.org/licenses/agpl-3.0.txt here. The text is
+approximately 34 KB / 661 lines. It must be included verbatim,
+unmodified, as required by the license itself.]
+
+================================================================
+END AGPL-3.0 CANONICAL TEXT
+================================================================

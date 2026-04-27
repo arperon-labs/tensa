@@ -1,0 +1,520 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+
+query = { SOI ~ (explain_query | export_query | dual_significance_query | calibrate_surrogate_query | generate_hybrid_narrative_query | generate_narrative_query | generate_query | mutation_query | discover_query | infer_hypergraph_reconstruction_query | opinion_phase_transition_query | opinion_dynamics_query | fuzzy_probability_query | verify_syllogism_query | fca_concept_query | fca_lattice_query | evaluate_rules_query | quantify_query | infer_query | tune_query | ask_query | flow_query | path_query | match_query) ~ EOI }
+
+// ─── Fuzzy Sprint Phase 6 — Intermediate quantifiers ───────────────
+// QUANTIFY <quantifier_name> <entity_pattern> [WHERE ...] [FOR "<nid>"] [AS "<label>"]
+// Evaluates a monotonic type <1,1> quantifier over entities or situations.
+// Empty WHERE → every node in the pattern's typed domain contributes
+// μ_P = 1.0. `AS` names the single scalar in the result row; default
+// column name is `quantifier_result`.
+quantify_query = {
+    ^"QUANTIFY" ~ quantifier_name_q6 ~ node_pattern ~ where_clause? ~ quantify_for_clause? ~ quantify_as_clause?
+}
+quantifier_name_q6 = { ^"MOST" | ^"MANY" | ^"ALMOST_ALL" | ^"FEW" }
+quantify_for_clause = { ^"FOR" ~ string_value }
+quantify_as_clause = { ^"AS" ~ string_value }
+
+// ─── Fuzzy Sprint Phase 7 — Graded syllogism verification ─────────────────
+// VERIFY SYLLOGISM { major: '<QUANT> <subj> IS <obj>',
+//                    minor: '...',
+//                    conclusion: '...' } FOR "<narrative_id>"
+//                 [THRESHOLD <f>] [WITH TNORM '<kind>']
+// Each statement is a single-quoted tiny-DSL string parsed inside the
+// executor (not in the grammar) so the pest grammar stays simple. See
+// [`crate::fuzzy::syllogism::parse_statement`] for DSL semantics.
+// Cites: [murinovanovak2014peterson].
+verify_syllogism_query = {
+    ^"VERIFY" ~ ^"SYLLOGISM" ~ "{" ~
+    syllogism_kv ~ ("," ~ syllogism_kv)* ~
+    "}" ~ ^"FOR" ~ string_value ~
+    syllogism_threshold_clause? ~ with_tnorm_clause?
+}
+syllogism_kv = { syllogism_key ~ ":" ~ model_name }
+syllogism_key = { ^"major" | ^"minor" | ^"conclusion" }
+syllogism_threshold_clause = { ^"THRESHOLD" ~ float_value }
+
+// ─── Fuzzy Sprint Phase 8 — Fuzzy Formal Concept Analysis ─────────────────
+// FCA LATTICE FOR "<narrative_id>"
+//     [THRESHOLD <n>]                    // prune concepts with |extent| < n
+//     [ATTRIBUTES ['tag1','tag2',...]]   // attribute allowlist
+//     [ENTITY_TYPE <Actor|...>]          // restrict to one entity type
+//     [WITH TNORM '<kind>']              // residuum override (default Gödel)
+//
+// Builds + persists a ConceptLattice at fz/fca/{nid}/{lid_v7_BE_16}.
+// Returns a descriptor row {lattice_id, num_concepts, num_objects,
+// num_attributes, tnorm} so the planner has a stable JSON shape.
+//
+// FCA CONCEPT <concept_idx> FROM "<lattice_id>"
+//     — retrieves one concept by its index into lattice.concepts.
+//
+// Cites: [belohlavek2004fuzzyfca] [kridlo2010fuzzyfca].
+fca_lattice_query = {
+    ^"FCA" ~ ^"LATTICE" ~ ^"FOR" ~ string_value ~
+    fca_lattice_clause* ~
+    with_tnorm_clause?
+}
+fca_lattice_clause = { fca_threshold_clause | fca_attributes_clause | fca_entity_type_clause }
+fca_threshold_clause = { ^"THRESHOLD" ~ unsigned_int }
+fca_attributes_clause = { ^"ATTRIBUTES" ~ "[" ~ model_name ~ ("," ~ model_name)* ~ "]" }
+fca_entity_type_clause = { ^"ENTITY_TYPE" ~ entity_type_name }
+
+fca_concept_query = {
+    ^"FCA" ~ ^"CONCEPT" ~ unsigned_int ~ ^"FROM" ~ string_value
+}
+
+// ─── Fuzzy Sprint Phase 9 — Mamdani rule-system evaluation ────────────────
+// EVALUATE RULES FOR "<nid>" AGAINST (e:Actor) [RULES ['rule-a','rule-b']]
+//   [WITH TNORM '<kind>']
+//
+// Runs the rule set against every entity that matches the pattern
+// (entity-type filtered). Each result row carries {entity_id, fired_rules,
+// defuzzified_output, defuzzification}.
+//
+// Cites: [mamdani1975mamdani].
+evaluate_rules_query = {
+    ^"EVALUATE" ~ ^"RULES" ~ ^"FOR" ~ string_value ~
+    ^"AGAINST" ~ "(" ~ binding? ~ ":" ~ entity_type_name ~ ")" ~
+    evaluate_rules_clause? ~
+    with_tnorm_clause?
+}
+evaluate_rules_clause = {
+    ^"RULES" ~ "[" ~ model_name ~ ("," ~ model_name)* ~ "]"
+}
+
+// ─── Fuzzy Sprint Phase 10 — Hybrid fuzzy-probability ─────────────────────
+// INFER FUZZY_PROBABILITY(
+//     event_kind := '<quantifier|mamdani_rule|custom>',
+//     event_ref  := '<json_payload_string>',
+//     distribution := '<uniform|weighted_json_string>'
+// ) FOR "<narrative_id>"
+//     [WITH TNORM '<kind>']
+//
+// Synchronous; computes P_fuzzy(E) = Σ μ_E(e) · P(e) on the Cao–Holčapek
+// base case. `event_ref` and `distribution` are single-quoted string
+// payloads parsed at the executor — same shape as the tiny-DSL asymmetry
+// used by VERIFY SYLLOGISM and the other model_name sites. Result row
+// carries `{ value, event_kind, distribution_summary }`.
+// Cites: [flaminio2026fsta] [faginhalpern1994fuzzyprob].
+fuzzy_probability_query = {
+    ^"INFER" ~ ^"FUZZY_PROBABILITY" ~ "(" ~ fuzzy_prob_param ~ ("," ~ fuzzy_prob_param)* ~ ")" ~
+    ^"FOR" ~ string_value ~
+    with_tnorm_clause?
+}
+fuzzy_prob_param = { fuzzy_prob_key ~ ":=" ~ model_name }
+fuzzy_prob_key   = { ^"event_kind" | ^"event_ref" | ^"distribution" }
+
+// ─── EATH Extension Phase 16c — Opinion dynamics (BCM on hypergraphs) ──────
+// Two named-parameter forms for the synchronous opinion-dynamics REST
+// (POST /analysis/opinion-dynamics + .../phase-transition-sweep).
+//
+// INFER OPINION_DYNAMICS(
+//     confidence_bound := <f>,
+//     variant := '<pairwise|group_mean>',
+//     [mu := <f>],
+//     [initial := '<uniform|gaussian|bimodal>']
+// ) FOR "<narrative_id>"
+//
+// INFER OPINION_PHASE_TRANSITION(
+//     c_start := <f>, c_end := <f>, c_steps := <n>
+// ) FOR "<narrative_id>"
+//
+// Named parameters mirror the existing INFER syntax for analysis ops.
+// `variant` and `initial` are single-quoted (model_name lexical) — same
+// asymmetry the rest of the synth grammar uses for "this is a name token".
+opinion_dynamics_query = {
+    ^"INFER" ~ ^"OPINION_DYNAMICS" ~ "(" ~ opinion_param ~ ("," ~ opinion_param)* ~ ")" ~ ^"FOR" ~ string_value ~
+    with_tnorm_clause? ~ with_aggregator_clause?
+}
+opinion_param = { opinion_param_key ~ ":=" ~ opinion_param_value }
+opinion_param_key = { ^"confidence_bound" | ^"variant" | ^"mu" | ^"initial" }
+opinion_param_value = { float_value | unsigned_int | model_name }
+
+opinion_phase_transition_query = {
+    ^"INFER" ~ ^"OPINION_PHASE_TRANSITION" ~ "(" ~ opinion_pt_param ~ ("," ~ opinion_pt_param)* ~ ")" ~ ^"FOR" ~ string_value ~
+    with_tnorm_clause? ~ with_aggregator_clause?
+}
+opinion_pt_param = { opinion_pt_key ~ ":=" ~ opinion_pt_value }
+opinion_pt_key = { ^"c_start" | ^"c_end" | ^"c_steps" }
+opinion_pt_value = { float_value | unsigned_int }
+
+// ─── EATH Phase 5 — Surrogate calibration + generation ────────
+// Two model-agnostic verbs. Model name is a string parameter (NOT a
+// hardcoded keyword) so registry-only changes plug HAD / hyperedge
+// configuration / Iacopini threshold etc. in without touching the
+// grammar.
+//
+// CALIBRATE has NO default model — calibration is O(dataset) and
+// downstream runs depend on its output, so ambiguity about which
+// model was fitted is a real footgun.
+//
+// GENERATE defaults the model to 'eath' when USING is omitted —
+// generation is per-call cheap and visible, so the convenience is
+// safe.
+//
+// CONVENTION DEPARTURE: model_name uses single quotes ('eath') to
+// keep it visually distinct from double-quoted narrative IDs
+// ("hamlet"). The rest of the grammar uses double-quoted strings
+// for everything; the asymmetry is intentional and called out in
+// docs/EATH_sprint.md Phase 5 spec.
+calibrate_surrogate_query = {
+    ^"CALIBRATE" ~ ^"SURROGATE" ~ ^"USING" ~ model_name ~ ^"FOR" ~ string_value
+}
+
+// ─── EATH Extension Phase 15c — SINDy hypergraph reconstruction ──────
+// INFER HYPERGRAPH FROM DYNAMICS FOR "<narrative_id>"
+//     [USING OBSERVATION '<source>']    // single-quoted lexical, like model_name
+//     [MAX_ORDER <n>]                   // 2..=4; default 3
+//     [LAMBDA <f>]                      // L1 strength override; auto when omitted
+//
+// Submits a `HypergraphReconstruction` job that reads the source narrative's
+// entity time-series (default observation source: `participation_rate`) and
+// recovers the latent hyperedges via the THIS / SINDy method (Delabays et
+// al., Nat. Commun. 16:2691, 2025).
+infer_hypergraph_reconstruction_query = {
+    ^"INFER" ~ ^"HYPERGRAPH" ~ ^"FROM" ~ ^"DYNAMICS" ~ ^"FOR" ~ string_value ~
+    recon_clause* ~
+    with_tnorm_clause? ~ with_aggregator_clause?
+}
+recon_clause = { recon_observation | recon_max_order | recon_lambda }
+recon_observation = { ^"USING" ~ ^"OBSERVATION" ~ model_name }
+recon_max_order   = { ^"MAX_ORDER" ~ unsigned_int }
+recon_lambda      = { ^"LAMBDA" ~ float_value }
+
+// ─── EATH Extension Phase 13c — dual-null-model significance ─────────
+// COMPUTE DUAL_SIGNIFICANCE FOR "<narrative_id>" USING '<metric>'
+//     [K_PER_MODEL <n>] [MODELS '<m1>','<m2>',...]
+// Default MODELS when clause omitted: 'eath','nudhy'.
+dual_significance_query = {
+    ^"COMPUTE" ~ ^"DUAL_SIGNIFICANCE" ~ ^"FOR" ~ string_value ~
+    ^"USING" ~ model_name ~
+    dual_sig_clause*
+}
+dual_sig_clause = { dual_sig_k_per_model | dual_sig_models }
+dual_sig_k_per_model = { ^"K_PER_MODEL" ~ unsigned_int }
+dual_sig_models = { ^"MODELS" ~ model_name ~ ("," ~ model_name)* }
+
+generate_narrative_query = {
+    ^"GENERATE" ~ ^"NARRATIVE" ~ string_value ~
+    ^"LIKE" ~ string_value ~
+    (^"USING" ~ ^"SURROGATE" ~ model_name)? ~
+    generate_clause*
+}
+
+generate_clause = { generate_params | generate_seed | generate_steps | generate_label_prefix }
+generate_params       = { ^"PARAMS" ~ params_json }
+generate_seed         = { ^"SEED" ~ unsigned_int }
+generate_steps        = { ^"STEPS" ~ unsigned_int }
+generate_label_prefix = { ^"LABEL_PREFIX" ~ model_name }
+
+// EATH Phase 9 — hybrid (mixture-distribution) generation.
+//   GENERATE NARRATIVE "<output>" USING HYBRID
+//       FROM "<src_a>" WEIGHT <f>, FROM "<src_b>" WEIGHT <f>, ...
+//       [SEED <u64>] [STEPS <n>]
+// Weights are float literals (validated to sum to 1.0 ± 1e-6 at planner).
+generate_hybrid_narrative_query = {
+    ^"GENERATE" ~ ^"NARRATIVE" ~ string_value ~
+    ^"USING" ~ ^"HYBRID" ~
+    hybrid_component ~ ("," ~ hybrid_component)+ ~
+    hybrid_clause*
+}
+hybrid_component = { ^"FROM" ~ string_value ~ ^"WEIGHT" ~ hybrid_weight }
+hybrid_weight    = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? }
+hybrid_clause    = { hybrid_seed | hybrid_steps }
+hybrid_seed      = { ^"SEED" ~ unsigned_int }
+hybrid_steps     = { ^"STEPS" ~ unsigned_int }
+
+// model_name and label_prefix value share the single-quoted literal
+// shape — the spec's `LABEL_PREFIX 'foo'` is not a model name but
+// the same lexical form, so we reuse the rule.
+model_name   = ${ "'" ~ model_inner ~ "'" }
+model_inner  = @{ (!"'" ~ ANY)+ }
+
+// Permissive JSON object body for PARAMS. We don't need to fully
+// model JSON in the pest grammar — the parser parses the captured
+// span via serde_json::from_str so any valid JSON object passes.
+// Brace counting is handled inline so PARAMS bodies can contain
+// nested objects.
+params_json = ${ "{" ~ params_body ~ "}" }
+params_body = @{ (params_nested | (!("{" | "}") ~ ANY))* }
+params_nested = _{ "{" ~ params_body ~ "}" }
+
+unsigned_int = @{ ASCII_DIGIT+ }
+
+// ─── GENERATE (narrative plan + generation) ───────────────
+generate_query = { ^"GENERATE" ~ generate_target }
+generate_target = { generate_plan | generate_chapter | materialize_plan | validate_narrative }
+generate_plan = { ^"PLAN" ~ ^"FOR" ~ string_value ~ (^"GENRE" ~ string_value)? ~ (^"CHAPTERS" ~ integer)? ~ (^"SUBPLOTS" ~ integer)? }
+generate_chapter = { ^"CHAPTER" ~ integer ~ ^"FROM" ~ ^"narrative:" ~ binding ~ (^"STYLE" ~ style_spec)? }
+materialize_plan = { ^"MATERIALIZE" ~ ^"PLAN" ~ string_value }
+validate_narrative = { ^"VALIDATE" ~ ^"NARRATIVE" ~ string_value }
+style_spec = { ^"e:" ~ binding | ^"BLEND" ~ blend_list }
+blend_list = { blend_item ~ ("," ~ blend_item)* }
+blend_item = { ^"e:" ~ binding ~ float_value }
+
+// ─── EXPLAIN (returns query plan without executing) ─────────
+explain_query = { ^"EXPLAIN" ~ (discover_query | infer_query | ask_query | path_query | match_query) }
+
+// ─── EXPORT (narrative data in various formats) ─────────────
+export_query = { ^"EXPORT" ~ ^"NARRATIVE" ~ string_value ~ ^"AS" ~ export_format }
+export_format = { ^"csv" | ^"graphml" | ^"json" | ^"manuscript" | ^"report" | ^"archive" | ^"stix" }
+
+// ─── DML Mutations ──────────────────────────────────────────
+
+mutation_query = {
+    create_narrative_stmt
+  | create_entity_stmt
+  | create_situation_stmt
+  | delete_stmt
+  | update_entity_stmt
+  | update_narrative_stmt
+  | add_participant_stmt
+  | remove_participant_stmt
+  | add_cause_stmt
+  | remove_cause_stmt
+}
+
+create_narrative_stmt = {
+    ^"CREATE" ~ ^"NARRATIVE" ~ string_value
+    ~ (^"TITLE" ~ string_value)?
+    ~ (^"GENRE" ~ string_value)?
+    ~ tags_clause?
+}
+
+tags_clause = { ^"TAGS" ~ "(" ~ string_value ~ ("," ~ string_value)* ~ ")" }
+
+create_entity_stmt = {
+    ^"CREATE" ~ "(" ~ binding? ~ ":" ~ entity_type_name ~ properties? ~ ")"
+    ~ in_narrative_clause?
+    ~ confidence_clause?
+}
+
+entity_type_name = { ^"Actor" | ^"Location" | ^"Artifact" | ^"Concept" | ^"Organization" }
+
+create_situation_stmt = {
+    ^"CREATE" ~ ^"SITUATION" ~ ^"AT" ~ narrative_level_name
+    ~ (^"CONTENT" ~ string_value)+
+    ~ in_narrative_clause?
+    ~ confidence_clause?
+}
+
+narrative_level_name = { ^"Story" | ^"Arc" | ^"Sequence" | ^"Scene" | ^"Beat" | ^"Event" }
+
+delete_stmt = {
+    ^"DELETE" ~ delete_target ~ string_value
+}
+
+delete_target = { ^"ENTITY" | ^"SITUATION" | ^"NARRATIVE" }
+
+update_entity_stmt = {
+    ^"UPDATE" ~ ^"ENTITY" ~ string_value
+    ~ ^"SET" ~ set_pair ~ ("," ~ set_pair)*
+}
+
+update_narrative_stmt = {
+    ^"UPDATE" ~ ^"NARRATIVE" ~ string_value
+    ~ ^"SET" ~ set_pair ~ ("," ~ set_pair)*
+}
+
+set_pair = { field_path ~ "=" ~ value }
+
+add_participant_stmt = {
+    ^"ADD" ~ ^"PARTICIPANT" ~ string_value ~ ^"TO" ~ ^"SITUATION" ~ string_value
+    ~ ^"ROLE" ~ role_name
+    ~ (^"ACTION" ~ string_value)?
+}
+
+role_name = {
+    ^"Protagonist" | ^"Antagonist" | ^"Witness" | ^"Target" | ^"Instrument"
+  | ^"Confidant" | ^"Informant" | ^"Recipient" | ^"Bystander" | ^"SubjectOfDiscussion"
+  | string_value
+}
+
+remove_participant_stmt = {
+    ^"REMOVE" ~ ^"PARTICIPANT" ~ string_value ~ ^"FROM" ~ ^"SITUATION" ~ string_value
+}
+
+add_cause_stmt = {
+    ^"ADD" ~ ^"CAUSE" ~ ^"FROM" ~ string_value ~ ^"TO" ~ string_value
+    ~ (^"TYPE" ~ causal_type_name)?
+    ~ (^"STRENGTH" ~ float_value)?
+    ~ (^"MECHANISM" ~ string_value)?
+}
+
+causal_type_name = { ^"Necessary" | ^"Sufficient" | ^"Contributing" | ^"Enabling" }
+
+remove_cause_stmt = {
+    ^"REMOVE" ~ ^"CAUSE" ~ ^"FROM" ~ string_value ~ ^"TO" ~ string_value
+}
+
+in_narrative_clause = { ^"IN" ~ ^"NARRATIVE" ~ string_value }
+confidence_clause = { ^"CONFIDENCE" ~ float_value }
+
+// TUNE query (prompt auto-tuning for domain-adapted extraction)
+tune_query = { ^"TUNE" ~ ^"PROMPTS" ~ ^"FOR" ~ string_value }
+
+// ─── Fuzzy Sprint Phase 3 — TNORM / AGGREGATE clauses ─────────
+// Optional trailing clauses attached to MATCH, INFER, and ASK statements
+// that override the default t-norm / aggregator used during confidence
+// fusion, WHERE-condition AND/OR folding, evidence combination, and RAG
+// score fusion. Unknown names parse (strings) but fail at plan time via
+// TNormRegistry / AggregatorRegistry validation.
+//
+// WITH TNORM 'lukasiewicz'
+// AGGREGATE MEAN | MEDIAN
+//   | OWA [0.4, 0.3, 0.2, 0.1]
+//   | CHOQUET 'my-measure'
+//   | TNORM_REDUCE 'godel'
+//   | TCONORM_REDUCE 'goguen'
+//
+// `model_name` (single-quoted lexical) is reused for the t-norm name, the
+// measure reference, and the reduce-direction t-norm argument — matches
+// the rest of the grammar's "name token is single-quoted" convention.
+// Cites: [klement2000] [yager1988owa] [grabisch1996choquet].
+with_tnorm_clause = { ^"WITH" ~ ^"TNORM" ~ model_name }
+with_aggregator_clause = { ^"AGGREGATE" ~ aggregator_kind }
+aggregator_kind = {
+    owa_kind
+  | choquet_kind
+  | tnorm_reduce_kind
+  | tconorm_reduce_kind
+  | mean_kind
+  | median_kind
+}
+mean_kind = { ^"MEAN" }
+median_kind = { ^"MEDIAN" }
+owa_kind = { ^"OWA" ~ weight_vector }
+choquet_kind = { ^"CHOQUET" ~ model_name }
+tnorm_reduce_kind = { ^"TNORM_REDUCE" ~ model_name }
+tconorm_reduce_kind = { ^"TCONORM_REDUCE" ~ model_name }
+weight_vector = { "[" ~ weight_entry ~ ("," ~ weight_entry)* ~ "]" }
+weight_entry = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+
+// ASK query (RAG — natural language question answering)
+ask_query = { ^"ASK" ~ string_value ~ over_clause? ~ mode_clause? ~ respond_clause? ~ session_clause? ~ suggest_clause? ~ return_clause? ~ with_tnorm_clause? ~ with_aggregator_clause? }
+over_clause = { ^"OVER" ~ string_value }
+mode_clause = { ^"MODE" ~ retrieval_mode }
+retrieval_mode = { ^"local" | ^"global" | ^"hybrid" | ^"mix" | ^"drift" | ^"lazy" | ^"ppr" }
+respond_clause = { ^"RESPOND" ~ ^"AS" ~ string_value }
+session_clause = { ^"SESSION" ~ string_value }
+suggest_clause = { ^"SUGGEST" }
+
+// PATH query (graph traversal — shortest/all/longest paths with optional GQL restrictor)
+path_query = { ^"MATCH" ~ ^"PATH" ~ path_top_k? ~ path_mode ~ path_restrictor? ~ path_pattern ~ path_weight? ~ where_clause? ~ return_clause }
+path_mode = { ^"SHORTEST" | ^"ALL" | ^"LONGEST" }
+path_top_k = { ^"TOP" ~ integer }
+path_weight = { ^"WEIGHT" ~ field_path }
+path_restrictor = { ^"WALK" | ^"TRAIL" | ^"ACYCLIC" | ^"SIMPLE" }
+path_pattern = { "(" ~ binding ~ ")" ~ "-[:" ~ rel_type ~ "*" ~ depth_range? ~ "]->" ~ "(" ~ binding ~ ")" }
+depth_range = { integer ~ ".." ~ integer }
+
+// FLOW query (max-flow / min-cut between two nodes)
+flow_query = { ^"MATCH" ~ ^"FLOW" ~ flow_type ~ path_pattern ~ return_clause }
+flow_type = { ^"MAX" | ^"MIN_CUT" }
+
+// Standard MATCH query (instant execution)
+match_query = { match_clause ~ across_clause? ~ where_clause? ~ at_clause? ~ near_clause? ~ spatial_clause? ~ as_of_clause? ~ group_by_clause? ~ return_clause ~ with_tnorm_clause? ~ with_aggregator_clause? }
+
+// AS OF clause (bi-temporal: filter to system state at a given transaction time)
+as_of_clause = { ^"AS" ~ ^"OF" ~ string_value }
+
+// INFER query (async job execution).
+// `where_clause?` at the top level lets narrative-scoped inference forms be
+// written as `INFER ARCS FOR n:Narrative WHERE n.narrative_id = "x" RETURN n`
+// without a redundant MATCH — the planner lifts `narrative_id` from WHERE
+// into job parameters.
+infer_query = { infer_clause ~ match_clause? ~ where_clause? ~ assuming_clause? ~ under_clause? ~ return_clause ~ with_tnorm_clause? ~ with_aggregator_clause? }
+
+// DISCOVER query (cross-narrative pattern mining, async)
+discover_query = { discover_clause ~ across_clause? ~ where_clause? ~ return_clause }
+
+// DISCOVER clause
+discover_clause = { ^"DISCOVER" ~ discover_type ~ discover_target? }
+discover_type = { ^"PATTERNS" | ^"ARCS" | ^"MISSING" }
+discover_target = { ^"IN" ~ binding ~ ":" ~ type_name }
+
+// ACROSS NARRATIVES clause
+across_clause = { ^"ACROSS" ~ ^"NARRATIVES" ~ narrative_list? }
+narrative_list = { "(" ~ string_value ~ ("," ~ string_value)* ~ ")" }
+
+// INFER clause
+infer_clause = { ^"INFER" ~ infer_type ~ ^"FOR" ~ infer_target }
+infer_type = { ^"CAUSES" | ^"MOTIVATION" | ^"GAME" | ^"COUNTERFACTUAL" | ^"MISSING_EVENTS" | ^"MISSING" | ^"ANOMALIES" | ^"CENTRALITY" | ^"COMMUNITIES" | ^"ENTROPY" | ^"BELIEFS" | ^"EVIDENCE" | ^"ARGUMENTS" | ^"CONTAGION_BISTABILITY" | ^"HIGHER_ORDER_CONTAGION" | ^"CONTAGION" | ^"TEMPORAL_RULES" | ^"MEAN_FIELD" | ^"PSL" | ^"TRAJECTORY" | ^"SIMULATE" | ^"STYLE_COMPARE" | ^"STYLE_ANOMALIES" | ^"STYLE" | ^"VERIFY_AUTHORSHIP" | ^"PAGERANK" | ^"EIGENVECTOR" | ^"HARMONIC" | ^"HITS" | ^"TOPOLOGY" | ^"LABEL_PROPAGATION" | ^"KCORE" | ^"TEMPORAL_PAGERANK" | ^"CAUSAL_INFLUENCE" | ^"INFO_BOTTLENECK" | ^"ASSORTATIVITY" | ^"TEMPORAL_MOTIFS" | ^"FACTION_EVOLUTION" | ^"FAST_RP" | ^"NODE2VEC" | ^"NETWORK_INFERENCE" | ^"BEHAVIORAL_FINGERPRINT" | ^"DISINFO_FINGERPRINT" | ^"SPREAD_VELOCITY" | ^"SPREAD_INTERVENTION" | ^"CIB" | ^"SUPERSPREADERS" | ^"CLAIM_ORIGIN" | ^"CLAIM_MATCH" | ^"ARCHETYPE" | ^"DISINFO_ASSESSMENT" | ^"COMMITMENTS" | ^"FABULA" | ^"SJUZET" | ^"DRAMATIC_IRONY" | ^"FOCALIZATION" | ^"CHARACTER_ARC" | ^"SUBPLOTS" | ^"SCENE_SEQUEL" | ^"REORDERING" | ^"ADVERSARY_POLICY" | ^"COGNITIVE_HIERARCHY" | ^"WARGAME" | ^"COUNTER_NARRATIVE" | ^"REWARD_FINGERPRINT" | ^"RETRODICTION" | ^"ACTOR_ARCS" | ^"ACTOR_ARC" | ^"ARCS" | ^"ARC" | ^"PATTERNS" }
+infer_target = { binding ~ ":" ~ type_name }
+
+// ASSUMING clause (counterfactual interventions)
+assuming_clause = { ^"ASSUMING" ~ assumption ~ (^"AND" ~ assumption)* }
+assumption = { field_path ~ "=" ~ value }
+
+// UNDER clause (game-theoretic constraints)
+under_clause = { ^"UNDER" ~ under_condition ~ (^"AND" ~ under_condition)* }
+under_condition = { under_key ~ "=" ~ value }
+under_key = { ^"RATIONALITY" | ^"INFORMATION" | ^"THINKING_LEVEL" | ^"BOUNDED" }
+
+// MATCH clause
+match_clause = { ^"MATCH" ~ pattern }
+pattern = { node_pattern ~ (edge_pattern ~ node_pattern)* }
+node_pattern = { "(" ~ binding? ~ ":" ~ type_name ~ properties? ~ ")" }
+edge_pattern = { reverse_edge | directed_edge | undirected_edge }
+directed_edge = { "-[" ~ binding? ~ ":" ~ rel_type ~ properties? ~ "]->" }
+reverse_edge = { "<-[" ~ binding? ~ ":" ~ rel_type ~ properties? ~ "]-" }
+undirected_edge = { "-[" ~ binding? ~ ":" ~ rel_type ~ properties? ~ "]-" }
+binding = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+type_name = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+rel_type = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+
+// Properties block { key: value, ... }
+properties = { "{" ~ prop_pair ~ ("," ~ prop_pair)* ~ "}" }
+prop_pair = { binding ~ ":" ~ value }
+
+// WHERE clause (supports AND, OR, and parenthesized grouping)
+where_clause = { ^"WHERE" ~ bool_expr }
+bool_expr = { bool_term ~ (^"OR" ~ bool_term)* }
+bool_term = { bool_factor ~ (^"AND" ~ bool_factor)* }
+bool_factor = { "(" ~ bool_expr ~ ")" | condition }
+condition = { (graph_func | field_path) ~ comparator ~ value }
+
+// Inline graph functions (Level 2 — synchronous during query execution)
+graph_func = { graph_func_name ~ "(" ~ func_args ~ ")" }
+graph_func_name = { ^"triangles" | ^"clustering" | ^"common_neighbors" | ^"adamic_adar" | ^"preferential_attachment" | ^"resource_allocation" | ^"jaccard" | ^"overlap" }
+func_args = { binding ~ ("," ~ binding)* }
+field_path = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* ~ ("." ~ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")*)* }
+comparator = { ">=" | "<=" | "!=" | "=" | ">" | "<" | ^"IN" | ^"CONTAINS" }
+
+// AT clause (temporal). Optional "AS FUZZY <rel> THRESHOLD <degree>" tail
+// (Fuzzy Sprint Phase 5) filters by graded-Allen degree against the AT
+// temporal reference instead of crisp equality.
+at_clause = { ^"AT" ~ temporal_expr ~ fuzzy_at_tail? }
+temporal_expr = { field_path ~ allen_op ~ value }
+allen_op = { ^"BEFORE" | ^"AFTER" | ^"MEETS_INVERSE" | ^"MEETS" | ^"OVERLAPS_INVERSE" | ^"OVERLAPS" | ^"DURING_INVERSE" | ^"DURING" | ^"WITHIN" | ^"CONTAINS" | ^"STARTS_INVERSE" | ^"STARTS" | ^"FINISHES_INVERSE" | ^"FINISHES" | ^"EQUALS" }
+fuzzy_at_tail = { ^"AS" ~ ^"FUZZY" ~ fuzzy_allen_rel ~ ^"THRESHOLD" ~ float_value }
+fuzzy_allen_rel = { ^"BEFORE" | ^"AFTER" | ^"MEETS_INVERSE" | ^"MEETS" | ^"OVERLAPS_INVERSE" | ^"OVERLAPS" | ^"STARTS_INVERSE" | ^"STARTS" | ^"DURING_INVERSE" | ^"DURING" | ^"FINISHES_INVERSE" | ^"FINISHES" | ^"EQUALS" }
+
+// NEAR clause (vector similarity)
+near_clause = { ^"NEAR" ~ "(" ~ binding ~ "," ~ string_value ~ "," ~ integer ~ ")" }
+
+// SPATIAL clause (geospatial proximity)
+spatial_clause = { ^"SPATIAL" ~ field_path ~ ^"WITHIN" ~ float_value ~ ^"KM" ~ ^"OF" ~ "(" ~ float_value ~ "," ~ float_value ~ ")" }
+
+// GROUP BY clause (optional, before RETURN)
+group_by_clause = { ^"GROUP" ~ ^"BY" ~ field_path ~ ("," ~ field_path)* }
+
+// RETURN clause (supports field paths and aggregate functions)
+return_clause = { ^"RETURN" ~ return_expr ~ ("," ~ return_expr)* ~ order_by? ~ limit? }
+return_expr = { agg_expr | graph_func | return_field }
+return_field = @{ "*" | ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* ~ ("." ~ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")*)* }
+agg_expr = { agg_func ~ "(" ~ agg_arg ~ ")" }
+agg_func = { ^"COUNT" | ^"SUM" | ^"AVG" | ^"MIN" | ^"MAX" }
+agg_arg = @{ "*" | ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* ~ ("." ~ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")*)* }
+order_by = { ^"ORDER" ~ ^"BY" ~ field_path ~ sort_dir? }
+sort_dir = { ^"ASC" | ^"DESC" }
+limit = { ^"LIMIT" ~ integer }
+
+// Value types
+value = { float_value | integer | string_value | boolean | null_value }
+float_value = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
+integer = @{ "-"? ~ ASCII_DIGIT+ }
+string_value = ${ "\"" ~ inner_string ~ "\"" }
+inner_string = @{ (!"\"" ~ ANY)* }
+boolean = { ^"true" | ^"false" }
+null_value = { ^"null" }
