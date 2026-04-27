@@ -1,0 +1,79 @@
+# .dockerignore — controls what the docker build context sees.
+# This file lives at the repo root because Docker requires the .dockerignore
+# at the build-context root, not next to the Dockerfile.
+
+# --- Build artifacts ---
+target/
+target-new/
+**/node_modules/
+**/dist/
+**/.next/
+**/__pycache__/
+**/*.pyc
+
+# --- VCS ---
+.git/
+.gitignore
+.gitattributes
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# --- Claude / agent state ---
+.claude/
+.logs/
+.pids/
+memory/
+.mcp.json
+
+# --- Runtime data and credentials ---
+.env
+.env.*
+*.env
+tensa_server_data/
+data/
+tmp/
+*.log
+*.log.*
+
+# --- Documentation that doesn't need to be in the image ---
+PAPER/
+docs/
+ARCHITECTURE.md
+ROADMAP.md
+PRD.md
+TESTING.md
+GRAPHRAG_TRACKER.md
+CHANGELOG.md
+CLAUDE.md
+
+# --- Studio (separate distribution path) ---
+studio/
+
+# --- Models (mounted as volume at runtime) ---
+models/
+
+# --- Corpora / private benchmarks ---
+corpus/
+tests/nightfall/
+tests/chronosense/
+tests/functional/test_data/
+
+# --- Output of the public-publish script ---
+# tensa_public/   # not at this level, but listed defensively
+
+# --- Misc ---
+*.png
+*.jpg
+*.pdf
+*.zip
+*.tensa
+*.tar
+*.tar.gz
+infographic*
+tensa_logo*

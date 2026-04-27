@@ -1,0 +1,50 @@
+# docker-compose.yml — local-development convenience wrapper.
+#
+# Usage:
+#   cd /path/to/tensa
+#   docker compose -f docker/docker-compose.yml up -d
+#   docker compose -f docker/docker-compose.yml logs -f tensa
+#   docker compose -f docker/docker-compose.yml down
+#
+# To rebuild after code changes:
+#   docker compose -f docker/docker-compose.yml build --no-cache
+#
+# For a published image (no rebuild), comment out `build:` and use:
+#   image: ghcr.io/arperon-labs/tensa:latest
+
+services:
+  tensa:
+    container_name: tensa
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        TENSA_FEATURES: "server,studio-chat,inference,web-ingest,docparse,generation,adversarial,gemini,bedrock,mcp,rocksdb,disinfo"
+    image: tensa:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      RUST_LOG: ${RUST_LOG:-tensa=info}
+      TENSA_ADDR: 0.0.0.0:3000
+      TENSA_DATA_DIR: /data
+      # Pick exactly one provider — leave the rest unset.
+      LOCAL_LLM_URL: ${LOCAL_LLM_URL:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      TENSA_MODEL: ${TENSA_MODEL:-}
+      # Optional embedding model — mount a host directory at /models below.
+      TENSA_EMBEDDING_MODEL: ${TENSA_EMBEDDING_MODEL:-}
+    volumes:
+      - tensa-data:/data
+      - tensa-models:/models
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  tensa-data:
+  tensa-models:

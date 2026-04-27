@@ -1,0 +1,86 @@
+# docker-bundle/docker-compose.yml — All-in-one TENSA evaluation recipe.
+#
+# Pulls pre-built images from GitHub Container Registry. No source
+# checkout or compile required — `docker compose up -d` brings up the
+# full stack in roughly the time it takes to pull two images.
+#
+# Bundle layout:
+#
+#   browser :8080 ─→ tensa-studio (nginx serves Studio bundle)
+#                         │
+#                         │ /api/* (same-origin, no CORS)
+#                         ▼
+#                    tensa-core :3000  (REST + MCP, RocksDB at /data)
+#
+# Usage:
+#   # Edit .env (or your shell) with at least one LLM provider, then:
+#   docker compose -f docker-bundle/docker-compose.yml up -d
+#   open http://localhost:8080
+#
+#   # Logs / lifecycle:
+#   docker compose -f docker-bundle/docker-compose.yml logs -f
+#   docker compose -f docker-bundle/docker-compose.yml stop
+#   docker compose -f docker-bundle/docker-compose.yml restart
+#   docker compose -f docker-bundle/docker-compose.yml down
+#   docker compose -f docker-bundle/docker-compose.yml down -v   # ⚠ destroys data
+#
+# Versioning: pin both images to the same minor version for guaranteed
+# compatibility. Patch-level skew within a minor version is supported.
+
+services:
+  tensa-core:
+    container_name: tensa-core
+    image: ghcr.io/arperon-labs/tensa:latest
+    restart: unless-stopped
+    networks: [tensa]
+    environment:
+      RUST_LOG: ${RUST_LOG:-tensa=info}
+      TENSA_ADDR: 0.0.0.0:3000
+      TENSA_DATA_DIR: /data
+      # LLM providers (set at least one). Resolution order:
+      #   LOCAL_LLM_URL > OPENROUTER_API_KEY > ANTHROPIC_API_KEY
+      LOCAL_LLM_URL: ${LOCAL_LLM_URL:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      TENSA_MODEL: ${TENSA_MODEL:-}
+      # Optional ONNX embedding model — set the path INSIDE the container
+      # and mount the host directory at /models below.
+      TENSA_EMBEDDING_MODEL: ${TENSA_EMBEDDING_MODEL:-}
+    volumes:
+      - tensa-data:/data
+      - tensa-models:/models
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  tensa-studio:
+    container_name: tensa-studio
+    image: ghcr.io/arperon-labs/tensa-studio:latest
+    restart: unless-stopped
+    networks: [tensa]
+    ports:
+      - "${STUDIO_HOST_PORT:-8080}:8080"
+    environment:
+      # Service-name DNS on the bundle's bridge network.
+      TENSA_API_URL: http://tensa-core:3000
+      STUDIO_PORT: 8080
+    depends_on:
+      tensa-core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  tensa-data:
+  tensa-models:
+
+networks:
+  tensa:
+    driver: bridge

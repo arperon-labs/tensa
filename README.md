@@ -440,11 +440,68 @@ Full endpoint reference: [`documentation/TENSA_REFERENCE.md`](documentation/TENS
 
 ---
 
-## Studio UI
+## Docker — engine, Studio, and the bundle
 
-Studio is a React + TypeScript console for analysts and writers — the human-facing surface for the engine. It lives in a **separate repo** and is distributed as a Docker image rather than as source. If you only need the engine, skip this section.
+TENSA ships as separate Docker images. Pull what you need, deploy what you want.
 
-To run TENSA *headless* (engine + REST + MCP), nothing in this repo requires Studio.
+| Image | What it is | Source |
+|---|---|---|
+| `ghcr.io/arperon-labs/tensa` | The engine — REST API, MCP, RocksDB, every analytical layer. | Open source — Dockerfile at [`docker/`](docker/), reproducibly built from this repo. |
+| `ghcr.io/arperon-labs/tensa-studio` | The web UI — React/TypeScript console served by nginx. | Distributed as **Docker image only**; source is not currently published. |
+
+### Three deployment paths
+
+**1. Bundle — fastest evaluation (pull + run, ~60 seconds).** Brings up engine + Studio together with persistent storage and the right networking out of the box.
+
+```bash
+cp docker-bundle/.env.example docker-bundle/.env
+$EDITOR docker-bundle/.env                 # set ONE LLM provider
+docker compose -f docker-bundle/docker-compose.yml up -d
+open http://localhost:8080                 # Studio UI
+```
+
+Full instructions: [`docker-bundle/README.md`](docker-bundle/README.md).
+
+**2. Engine only — headless, custom integration.** Pull the published image and run it directly (or build it yourself from source via [`docker/`](docker/)):
+
+```bash
+docker run -d --name tensa \
+  -p 3000:3000 \
+  -v tensa-data:/data \
+  -e OPENROUTER_API_KEY=sk-or-... \
+  -e TENSA_MODEL=anthropic/claude-sonnet-4 \
+  ghcr.io/arperon-labs/tensa:latest
+
+curl http://localhost:3000/health
+```
+
+Build your own engine image: [`docker/README.md`](docker/README.md).
+
+**3. Studio only — point at an existing engine.** Useful if you already run the engine on dedicated infra and just want to add a UI:
+
+```bash
+docker run -d --name tensa-studio \
+  -p 8080:8080 \
+  -e TENSA_API_URL=http://your-engine.example.com:3000 \
+  ghcr.io/arperon-labs/tensa-studio:latest
+```
+
+### Why separate images?
+
+Different audiences (researchers, MCP users, operational analysts) want different combinations. Different update cadences (engine ships rarely, Studio ships often). Different security postures (Studio renders untrusted content, the engine doesn't). Combined images would force every deployment into the slowest-moving component's release cycle. Separate images let each be updated, scaled, and patched independently.
+
+This pattern follows what mature server-software-with-UI projects do: Postgres/pgAdmin, Elasticsearch/Kibana, GitLab's component split. The bundle compose hides that complexity for evaluation users; production deployments use individual images and manage them per-component.
+
+### About Studio's source
+
+Studio is currently distributed **only as a Docker image** — its source is private. The decision was deliberate: the engine is open infrastructure (under AGPL-3.0 + commercial dual licensing), while the UI is a polished, application-grade artifact whose value is in the experience rather than the code. Image-only releases come with a few obligations:
+
+- The image must be of release quality from day one — users only see the running artifact.
+- Issue reports include reproduction steps + container logs (since users can't read source).
+- Images are signed and pinned to versions to give analysts and researchers traceable, verifiable artifacts.
+- For deployments that require source access (audited environments, custom UI builds), a commercial agreement covers that — see [`license/`](license/).
+
+If you want a fully source-available console, the REST API is documented in [`documentation/TENSA_REFERENCE.md`](documentation/TENSA_REFERENCE.md) and stable; build your own UI on top of it.
 
 ---
 
@@ -455,6 +512,8 @@ To run TENSA *headless* (engine + REST + MCP), nothing in this repo requires Stu
 - [`skills/`](skills/) — bundled skill markdown.
 - [`src/`](src/) — engine source. Module layout mirrors the architecture diagram above.
 - [`tests/`](tests/) — unit + integration + benchmark suites.
+- [`docker/`](docker/) — Dockerfile + recipes to build the engine image yourself.
+- [`docker-bundle/`](docker-bundle/) — `docker compose` recipe pulling published engine + Studio images for one-command deployment.
 
 ---
 
