@@ -164,7 +164,7 @@ audited.
 If you are contributing on behalf of a company or your legal department
 requires a signed document, download `CLA-entity.pdf` from
 https://arperon.com/tensa/cla, complete the signature block, and email
-the signed copy to **licensing@arperon.com**. We will countersign and
+the signed copy to **info@arperon.com**. We will countersign and
 return a copy for your records.
 
 ### Option C — DCO fallback (minor contributions only)

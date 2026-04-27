@@ -1,40 +1,79 @@
-# TENSA — Temporal Narrative Tensor Architecture
+# TENSA — Temporal Hypergraph Neuro-Symbolic Architecture
 
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](license/LICENSE)
 [![Commercial license available](https://img.shields.io/badge/commercial%20license-available-green.svg)](license/COMMERCIAL-LICENSE-TERMS.md)
 [![Rust](https://img.shields.io/badge/rust-1.83%2B-orange.svg)](https://www.rust-lang.org/)
 
-**TENSA is a multi-fidelity narrative storage, reasoning, and inference engine.** It represents multi-actor event systems — novels, criminal cases, intelligence corpora, disinformation operations, simulated wargames — as a **temporal hypergraph** with mixed deterministic-and-latent annotations, queryable through a custom DSL called **TensaQL**.
+**TENSA is a neuro-symbolic reasoning runtime for multi-actor event systems.** It is not a database with an LLM wrapper; it is an **inference substrate** — a typed bipartite temporal hypergraph carrying explicit multi-fidelity epistemic annotations, queried through a declarative language with **configurable fuzzy semantics**, and executed by a pool of registered inference engines spanning causal, game-theoretic, motivational, analytical, temporal, probabilistic, dynamical, and reconstructive reasoning.
 
-It is, in plain language: a graph database for *stories*, with reasoning operators (causal, game-theoretic, fuzzy, argumentation-based, opinion-dynamic) that compose over the same substrate.
+Knowledge graphs have become a standard substrate for grounding large language models, but the dominant paradigm — RAG and its graph-enhanced variants (GraphRAG, LightRAG, G-Retriever) — treats the knowledge graph as a **passive index**. Retrieval delivers uncomputed context to the LLM's attention mechanism, and the burden of temporal resolution, causal reasoning, strategic inference, and graded epistemic judgement falls entirely on the language model in a single forward pass.
+
+TENSA implements an alternative: a **System-2 coprocessor**. Queries that require temporal resolution, causal simulation, strategic reasoning, or graded epistemic judgement are intercepted, computed via principled algorithms with declared formal semantics, and returned as condensed, auditable results.
 
 ---
 
-## What problem does TENSA solve?
+## Three failure modes TENSA addresses
 
-Most graph databases assume facts are crisp and edges are binary. Most narrative tools assume the writer hands them clean structure. Real multi-actor event systems are neither:
+Mainstream graph + RAG systems exhibit three concrete failure modes:
 
-- **Facts have confidence**, not just presence. A claim is sourced, contradicted, partially refuted, or pinned by an analyst.
-- **Time is fuzzy**. "Before the meeting" or "shortly after the explosion" is the user's actual mental model — not a timestamp.
-- **Hyperedges, not edges**. A scene/incident/situation involves *N* participants in *N* roles simultaneously, with their own information sets and payoffs.
-- **Maturity matters**. A candidate observation, a corroborated fact, and a canon-pinned ground truth need separate lanes.
+1. **Temporal fragmentation.** Binary knowledge graphs represent multi-actor events as combinatorial sets of subject–predicate–object triples. A diplomatic meeting among five actors generates ten or more triples and loses the event's unity along with any interval structure.
+2. **Causal opacity.** When asked *"what would have happened if actor X had cooperated instead of defected?"*, a passive retrieval system can only deliver the factual record. Counterfactual computation is left to the LLM with no guarantee of logical consistency.
+3. **Epistemic flatness.** Reliability collapses to a single scalar (probability / confidence / attention weight). A peer-reviewed finding held with low confidence and a tabloid rumour that happens to be true become indistinguishable.
 
-TENSA gives you all of that with a queryable foundation: hypergraph + Allen interval algebra + confidence pipeline + 178 MCP tools + a chat-driven Studio UI (open-core; ships separately).
+---
+
+## Three primitives TENSA contributes
+
+**1. Multi-fidelity reasoning.** Confidence (continuous, data-quality axis) and maturity (discrete lifecycle: `Candidate ≺ Reviewed ≺ Validated ≺ GroundTruth`) are modelled as **independent first-class annotations** that propagate jointly through every reasoning trace. A `Candidate` with 0.95 confidence and a `Validated` with 0.55 confidence are distinct epistemic states and interact differently with downstream inference, audit, and explanation. Three mathematically orthogonal uncertainty models compose on top: reactive Bayesian confidence (data quality), Dempster–Shafer evidence theory with claim-aware mass concentration (hypothesis-space ignorance), and Probabilistic Soft Logic (rule-based global inference).
+
+**2. Configurable fuzzy semantics.** Most reasoning systems commit implicitly to a single combination rule for uncertain propositions — usually product (Bayesian), min (conservative), or arithmetic mean (naive). TENSA brings four decades of formal fuzzy-logic theory into a production runtime as a **selectable per-query concern**:
+
+- Four canonical t-norm families: Gödel, Goguen, Łukasiewicz, Hamacher (with De Morgan duals)
+- OWA and Choquet-integral aggregation with Möbius-representation fuzzy measures, plus a **supervised learning baseline** that induces a Choquet measure from ranking labels under monotonicity-constrained projected gradient descent
+- Fuzzy Allen interval relations (Schockaert–De Cock, Dubois–Prade) and the **Nebel–Bürckert ORD-Horn** tractable subfragment with O(n³) path-consistency closure
+- Novák-style intermediate quantifiers, graded Peterson syllogisms, Bělohlávek-style fuzzy formal concept analysis, Mamdani rule systems, and a scope-capped Cao–Holčapek base case for fuzzy-probabilistic hybrid inference
+
+The query language exposes t-norm and aggregator choice as first-class clauses; every aggregation result is **tagged with the semantic configuration that produced it**; re-running under alternative semantics produces a new row rather than overwriting, so side-by-side comparison is a first-class operation. Defaults (Gödel t-norm, mean aggregator, crisp Allen, symmetric-additive Choquet measure) reproduce canonical closed-form arithmetic bit-identically — a regression-test scaffold asserts these algebraic identities so opting *into* a non-default semantics produces a tagged new result, never a silent change to default-semantics output.
+
+**3. Traceable derivation as explainability by construction.** Explainable AI is dominated by post-hoc rationalisation: the model answers, then a separate mechanism produces an *explanation* that may or may not reflect the computation actually performed. TENSA's debug mode returns every answer atomically as a triple ⟨**answer**, **TensaQL query**, **retrieved rows**⟩. The query is the canonical symbolic derivation; the rows are the specific data that instantiated it; the answer is a function of the two. A regulator can re-execute the query against the same data and verify reproduction. This is structural explainability, not reconstruction — it satisfies the transparency obligations of EU AI Act Article 13 and provides the evidential structure for Article 14's meaningful-human-oversight requirement.
+
+---
+
+## What's in the box
+
+A registered inference-engine catalogue of roughly sixty engines, including:
+
+- **Causal discovery** — DAGMA with LLM-augmented priors and adaptive scheduling, NOTEARS as alternative, do-calculus interventions, counterfactual beam search
+- **Game theory** — Quantal Response Equilibrium, mean-field games, sub-game decomposition for N>4
+- **Motivation inference** — Maximum Entropy IRL with archetype classification for sparse data
+- **Argumentation** — Dung extensions (grounded / preferred / stable) plus four gradual / ranking-based semantics (h-Categoriser, Weighted h-Categoriser, Max-Based, Card-Based) with influence-step t-norm coupling
+- **Temporal reasoning** — Hawkes processes, temporal ILP with Allen-relation-aware bodies, Allen 13-relation algebra with composition table
+- **Information dynamics** — classical SIR, higher-order hypergraph SIR (Iacopini–Petri–Barrat–Latora), bounded-confidence opinion dynamics on hypergraphs (Hickok 2022, Schawe–Hernández 2022) with phase-transition detection
+- **Hypergraph reconstruction** — SINDy-based reconstruction from observed dynamics (Delabays 2025) with bootstrap confidence
+- **Synthetic generation** — EATH surrogate (Mancastroppa–Cencetti–Barrat) for null-model significance testing
+- **Cross-narrative analysis** — pattern mining via WL/random-walk kernels, Reagan 6-arc classification, Propp 31-function analysis, missing-event prediction
+
+The same substrate is instantiated for **narrative analysis** (hierarchical generation with verifiable structural properties — six narrative levels, eight architecture patterns including setup/payoff, fabula/sjužet, focalisation, scene–sequel rhythm, commitment tracking) and **disinformation detection** (coordinated-inauthentic-behaviour analysis on null hypergraph models, higher-order contagion, opinion dynamics) — sharing identical code paths.
 
 ---
 
 ## Architecture at a glance
 
+A five-layer stack with the configurable fuzzy layer threading through layers 2–4 as an orthogonal spine:
+
 ```
-Layer 5: API          (REST endpoints — axum, feature-gated)
-Layer 4: Query        (TensaQL parser + planner + executor)
-Layer 3c: Synth       (surrogate-model generation — EATH)
-Layer 3b: Narrative   (cross-narrative pattern mining, arc classification)
-Layer 3a: Inference   (causal, game-theoretic, motivation)
-Layer 2: Hypergraph   (entities, situations, participation, state versioning, causal links)
-Layer 1: Storage      (KV trait + RocksDB / in-memory)
-Layer 0: Types        (UUIDs, serialization, Allen intervals)
+Layer 5: API          REST (90+ endpoints) + 180-tool MCP + OpenAI-compat + Studio
+Layer 4: Query        TensaQL — bifurcated planner: symbolic execution vs async inference jobs
+Layer 3c: Synth       Surrogate-model generation (EATH); null-model significance pipelines
+Layer 3b: Narrative   Cross-narrative pattern mining; arc classification; missing-event prediction
+Layer 3a: Inference   Causal · game-theoretic · motivation · argumentation · contagion · opinion
+Layer 2: Hypergraph   Bipartite (entities/situations) · multi-role participation · Allen intervals
+                       · bi-temporal versioning · provenance chain · maturity lifecycle
+Layer 1: Storage      KV trait → RocksDB / in-memory (substrate-portable)
+Layer 0: Types        UUIDs (v7, time-ordered) · serialization · Allen relations · semantic tags
 ```
+
+Every confidence-returning REST endpoint accepts optional `?tnorm=<kind>&aggregator=<kind>`. Every TensaQL `MATCH` / `INFER` / `ASK` clause accepts an optional `WITH TNORM '<kind>' AGGREGATE <kind>` tail. Defaults preserve the canonical closed-form result.
 
 The full reference — every TensaQL clause, every REST endpoint, every MCP tool, every KV prefix, every algorithm and citation — lives in [**`documentation/TENSA_REFERENCE.md`**](documentation/TENSA_REFERENCE.md). This README is the on-ramp.
 
@@ -366,7 +405,7 @@ Before you open a PR:
 TENSA is **dual-licensed**. Choose the license that fits your use case:
 
 - **[GNU AGPL-3.0](license/LICENSE)** — free, for research, open-source projects, and internal use. Requires that you release the source of any product that embeds or network-serves TENSA under AGPL-3.0 too.
-- **Commercial license** from Arperon s.r.o. — for proprietary products, SaaS, and any use that cannot accept AGPL-3.0 obligations. See [`license/COMMERCIAL-LICENSE-TERMS.md`](license/COMMERCIAL-LICENSE-TERMS.md) or email **licensing@arperon.com**.
+- **Commercial license** from Arperon s.r.o. — for proprietary products, SaaS, and any use that cannot accept AGPL-3.0 obligations. See [`license/COMMERCIAL-LICENSE-TERMS.md`](license/COMMERCIAL-LICENSE-TERMS.md) or email **info@arperon.com**.
 
 See [`license/DUAL-LICENSING.md`](license/DUAL-LICENSING.md) for how to choose and a plain-English FAQ.
 

@@ -2,7 +2,7 @@
 
 **Licensor:** Arperon s.r.o., Hlinícka 184/37, 919 26 Zavar, Slovak Republic
 **Effective:** 2026-04-18 (version 1.0)
-**Contact:** licensing@arperon.com
+**Contact:** info@arperon.com
 
 This document is a **term sheet**, not the commercial license contract
 itself. It describes the standard terms Arperon will offer to commercial
@@ -183,7 +183,7 @@ LCIA arbitration in London as an alternative on request.
 
 ## Quick quote
 
-Fill in this short form and email it to **licensing@arperon.com**:
+Fill in this short form and email it to **info@arperon.com**:
 
     Company:                 _______________________________________
     Registered country:      _______________________________________

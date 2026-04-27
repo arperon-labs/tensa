@@ -15,7 +15,7 @@ TENSA is **dual-licensed**. Choose the license that fits your use case:
 - **Commercial license** from Arperon s.r.o. — for proprietary
   products, SaaS, and any use that cannot accept AGPL-3.0 obligations.
   See [`COMMERCIAL-LICENSE-TERMS.md`](./COMMERCIAL-LICENSE-TERMS.md) or
-  email **licensing@arperon.com**.
+  email **info@arperon.com**.
 
 See [`DUAL-LICENSING.md`](./DUAL-LICENSING.md) for how to choose and a
 plain-English FAQ.

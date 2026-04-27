@@ -43,7 +43,7 @@ The commercial license removes all AGPL-3.0 source-disclosure obligations
 and adds the commercial terms you need. See
 [COMMERCIAL-LICENSE-TERMS.md](./COMMERCIAL-LICENSE-TERMS.md) for the
 standard terms and pricing tiers, or write to
-**licensing@arperon.com** for a quote.
+**info@arperon.com** for a quote.
 
 ## FAQ
 

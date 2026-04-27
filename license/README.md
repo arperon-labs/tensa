@@ -58,9 +58,9 @@ cat README-LICENSING-snippet.md   # copy the relevant section
       scare off users who only want to write plugins. Consider a
       written exception that says "linking with plugins via the public
       `tensa-plugin-api` crate does not create a derivative work."
-- [ ] Register `licensing@arperon.com`, `security@arperon.com`,
-      `research@arperon.com`, `conduct@arperon.com`, `hello@arperon.com`
-      as working aliases before going public.
+- [ ] Confirm `info@arperon.com` is the single working address for
+      licensing, security, research, conduct, and general inquiries
+      before going public.
 - [ ] Trademark: file Slovak/EU trademark application for "TENSA" and
       the Narrative Fingerprint radar design **before** the public
       release. The public release starts the clock on opposition and

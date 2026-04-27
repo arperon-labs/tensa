@@ -54,17 +54,17 @@ we do not control.
 ## 4. Code of Conduct
 
 This project follows the [Contributor Covenant](https://www.contributor-covenant.org/)
-v2.1. Report unacceptable behavior to **conduct@arperon.com**.
+v2.1. Report unacceptable behavior to **info@arperon.com**.
 
 ## 5. Security
 
 Do **not** file security issues in the public tracker. Email
-**security@arperon.com** with a description, reproduction steps, and your
+**info@arperon.com** with a description, reproduction steps, and your
 preferred disclosure window. We will respond within 72 hours.
 
 ## 6. Questions
 
 - Bugs and features: GitHub Issues
-- Licensing and commercial terms: **licensing@arperon.com**
-- Research collaboration and EU grant consortia: **research@arperon.com**
-- Everything else: **hello@arperon.com**
+- Licensing and commercial terms: **info@arperon.com**
+- Research collaboration and EU grant consortia: **info@arperon.com**
+- Everything else: **info@arperon.com**
