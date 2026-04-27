@@ -2,7 +2,8 @@
 
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](license/LICENSE)
 [![Commercial license available](https://img.shields.io/badge/commercial%20license-available-green.svg)](license/COMMERCIAL-LICENSE-TERMS.md)
-[![Rust](https://img.shields.io/badge/rust-1.83%2B-orange.svg)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org/)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19829764-1d51b1.svg)](https://doi.org/10.5281/zenodo.19829764)
 
 **TENSA is a neuro-symbolic reasoning runtime for multi-actor event systems.** It is not a database with an LLM wrapper; it is an **inference substrate** — a typed bipartite temporal hypergraph carrying explicit multi-fidelity epistemic annotations, queried through a declarative language with **configurable fuzzy semantics**, and executed by a pool of registered inference engines spanning causal, game-theoretic, motivational, analytical, temporal, probabilistic, dynamical, and reconstructive reasoning.
 
@@ -588,6 +589,31 @@ Open an issue in this repo with:
 - [`tests/`](tests/) — unit + integration + benchmark suites.
 - [`docker/`](docker/) — Dockerfile + recipes to build the engine image yourself.
 - [`docker-bundle/`](docker-bundle/) — `docker compose` recipe pulling published engine + Studio images for one-command deployment.
+
+---
+
+## Citation
+
+If you use TENSA in academic, research, or grant work, please cite the architecture paper:
+
+> Lovecký, R. (2026). *TENSA — Temporal Hypergraph Neuro-Symbolic Architecture: A Multi-Fidelity, Configurable-Semantics Reasoning Runtime for Multi-Actor Event Systems.* Zenodo. https://doi.org/10.5281/zenodo.19829764
+
+BibTeX:
+
+```bibtex
+@misc{lovecky2026tensa,
+  author       = {Lovecký, Radoslav},
+  title        = {{TENSA — Temporal Hypergraph Neuro-Symbolic Architecture:
+                   A Multi-Fidelity, Configurable-Semantics Reasoning Runtime
+                   for Multi-Actor Event Systems}},
+  year         = {2026},
+  publisher    = {Zenodo},
+  doi          = {10.5281/zenodo.19829764},
+  url          = {https://doi.org/10.5281/zenodo.19829764}
+}
+```
+
+The DOI is **version-resolving** — `10.5281/zenodo.19829764` always points at the latest published version. Cite a specific version (e.g. `10.5281/zenodo.19829765`) for exact reproducibility, available on the Zenodo page above.
 
 ---
 

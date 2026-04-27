@@ -15,7 +15,7 @@
 #
 # Resulting image (release, full features) is approximately 90-130 MB.
 
-ARG RUST_VERSION=1.83
+ARG RUST_VERSION=1.90
 
 # ---------------------------------------------------------------------------
 # Stage 1 — Builder
@@ -60,11 +60,14 @@ COPY documentation ./documentation
 COPY license ./license
 
 # Real build. The cache mounts mean only changed crates recompile.
+# strip is allowed to fail (already-stripped binaries warn), but cargo
+# build and cp must succeed — keep them on a separate set-e-protected line.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/target \
-    cargo build --release --bin tensa-server --features "${TENSA_FEATURES}" \
+    set -e \
+ && cargo build --release --bin tensa-server --features "${TENSA_FEATURES}" \
  && cp target/release/tensa-server /tensa-server \
- && strip /tensa-server || true
+ && (strip /tensa-server || true)
 
 # ---------------------------------------------------------------------------
 # Stage 2 — Runtime
