@@ -139,6 +139,24 @@ cargo test                                      # default features (~1500 tests)
 cargo test --features "server,mcp,embedding"    # full surface
 ```
 
+### Full release build (recommended)
+
+The "full" build pulls in every shipping feature: server, MCP, embeddings, ingestion, narrative generation, adversarial wargame, gemini/bedrock LLM providers, and the Studio chat agent SSE endpoint.
+
+```bash
+# Linux / macOS
+cargo build --release --bin tensa-server \
+  --features "server,studio-chat,embedding,inference,web-ingest,docparse,generation,adversarial,gemini,bedrock,mcp"
+```
+
+```powershell
+# Windows (PowerShell)
+cargo build --release --bin tensa-server `
+  --features "server,studio-chat,embedding,inference,web-ingest,docparse,generation,adversarial,gemini,bedrock,mcp"
+```
+
+The release binary lands at `target/release/tensa-server` (or `.exe` on Windows). Build time on a clean machine: 3-8 minutes depending on hardware.
+
 ---
 
 ## Running the server
@@ -154,6 +172,32 @@ cargo run --release --features server
 curl http://localhost:3000/health
 # {"status":"ok"}
 ```
+
+### Service launcher (start / stop / status / logs)
+
+For day-to-day use, the repo ships a thin launcher under `scripts/` that builds with the full feature set, manages a pidfile in `.pids/`, and tails logs from `.logs/`. The API listens on port **4350** by default.
+
+```bash
+# Linux / macOS
+./scripts/tensa.sh start       # builds (if needed) and starts the API
+./scripts/tensa.sh status      # show running state
+./scripts/tensa.sh logs        # tail .logs/api.log
+./scripts/tensa.sh restart     # stop + start
+./scripts/tensa.sh rebuild     # stop + cargo build --release + start
+./scripts/tensa.sh stop
+```
+
+```powershell
+# Windows (PowerShell)
+.\scripts\tensa.ps1 start
+.\scripts\tensa.ps1 status
+.\scripts\tensa.ps1 logs
+.\scripts\tensa.ps1 restart
+.\scripts\tensa.ps1 rebuild
+.\scripts\tensa.ps1 stop
+```
+
+Both scripts are deliberately simple (one service, single launcher) — they wrap the same `cargo build --release --features ...` invocation shown above. If you need different ports, env vars, or feature combinations, run `cargo` directly.
 
 ### With an LLM provider
 
