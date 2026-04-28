@@ -108,8 +108,8 @@ cargo build
 # Server (REST API)
 cargo build --release --features server
 
-# Server + MCP + embeddings + document parsing + web ingest + studio chat
-cargo build --release --features "server,mcp,embedding,docparse,web-ingest,studio-chat"
+# Server + MCP + embeddings + document parsing + web ingest
+cargo build --release --features "server,mcp,embedding,docparse,web-ingest"
 
 # Adversarial wargaming layer (D12)
 cargo build --release --features "server,adversarial"
@@ -142,21 +142,23 @@ cargo test --features "server,mcp,embedding"    # full surface
 
 ### Full release build (recommended)
 
-The "full" build pulls in every shipping feature: server, MCP, embeddings, ingestion, narrative generation, adversarial wargame, gemini/bedrock LLM providers, and the Studio chat agent SSE endpoint.
+The "full" build pulls in every shipping backend feature: server, MCP, embeddings, ingestion, narrative generation, adversarial wargame, and the gemini/bedrock LLM providers.
 
 ```bash
 # Linux / macOS
 cargo build --release --bin tensa-server \
-  --features "server,studio-chat,embedding,inference,web-ingest,docparse,generation,adversarial,gemini,bedrock,mcp"
+  --features "server,embedding,inference,web-ingest,docparse,generation,adversarial,gemini,bedrock,mcp"
 ```
 
 ```powershell
 # Windows (PowerShell)
 cargo build --release --bin tensa-server `
-  --features "server,studio-chat,embedding,inference,web-ingest,docparse,generation,adversarial,gemini,bedrock,mcp"
+  --features "server,embedding,inference,web-ingest,docparse,generation,adversarial,gemini,bedrock,mcp"
 ```
 
 The release binary lands at `target/release/tensa-server` (or `.exe` on Windows). Build time on a clean machine: 3-8 minutes depending on hardware.
+
+> **Note:** the `studio-chat` feature compiles the `/studio/chat` SSE endpoint, but the Studio frontend that talks to it is **not** shipped in this source tree — it ships only via the public Docker image. If you want the chat agent end-to-end, use the Docker distribution. Building `studio-chat` from source on its own gives you a backend endpoint with no UI client.
 
 ---
 
