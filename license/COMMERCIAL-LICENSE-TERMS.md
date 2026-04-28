@@ -155,8 +155,8 @@ pre-termination claims, §2 restrictions.
 - Net 30 days from invoice date
 - DPH/VAT applied per Slovak law; EU B2B customers with valid VAT ID
   under reverse charge (OSS)
-- Wire transfer to Arperon's IBAN **SK65 1100 0000 0029 4010 2508**
-  or via Stripe/Paddle link provided on invoice
+- Wire transfer or via Stripe/Paddle link, with bank details and
+  payment instructions provided on each invoice
 - Late fees: Euribor 12M + 4% per annum
 
 ## 9. Data, privacy, confidentiality
@@ -188,7 +188,7 @@ Fill in this short form and email it to **info@arperon.com**:
     Company:                 _______________________________________
     Registered country:      _______________________________________
     Annual revenue bracket:  < €2M  /  < €50M  /  > €50M
-    Intended use:            (embedded / SaaS / internal / OEM)
+    Intended use:            (embedded / SaaS / internal / OEM / research)
     Expected user volume:    _______________________________________
     Preferred tier:          Startup / Growth / Enterprise / Custom
     Deployment regions:      _______________________________________
