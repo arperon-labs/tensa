@@ -7,8 +7,12 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-/// Current archive format version.
-pub const ARCHIVE_VERSION: &str = "1.0.0";
+/// Current archive format version. Bumped to 1.1.0 in v0.79.5 to add six new
+/// optional layers — annotations, pinned_facts, revisions, workshop_reports,
+/// narrative_plan, analysis_status — required for `/tensa-narrative-llm`
+/// outputs to round-trip losslessly. Older readers ignore unknown layer keys
+/// thanks to `#[serde(default)]`, so the bump is backward-compatible.
+pub const ARCHIVE_VERSION: &str = "1.1.0";
 
 /// MIME type for .tensa archives.
 pub const ARCHIVE_CONTENT_TYPE: &str = "application/x-tensa-archive";
@@ -84,6 +88,27 @@ pub struct ArchiveLayers {
     /// Project containers.
     #[serde(default)]
     pub projects: bool,
+    // ── v1.1.0 layers (skill-output round-trip set) ──────────
+    /// Inline annotations (comments / footnotes / citations) on situation prose.
+    #[serde(default)]
+    pub annotations: bool,
+    /// Pinned continuity facts (W4).
+    #[serde(default)]
+    pub pinned_facts: bool,
+    /// Narrative revisions (git-like history).
+    #[serde(default)]
+    pub revisions: bool,
+    /// Workshop critique reports.
+    #[serde(default)]
+    pub workshop_reports: bool,
+    /// Narrative plan (writer doc).
+    #[serde(default)]
+    pub narrative_plan: bool,
+    /// Per-narrative analysis-status registry (v0.79.3) — preserves the
+    /// `Source` (Auto/Skill/Manual) + `locked` flag for each completed job
+    /// so a re-imported archive keeps its lock semantics.
+    #[serde(default)]
+    pub analysis_status: bool,
 }
 
 impl Default for ArchiveLayers {
@@ -99,6 +124,12 @@ impl Default for ArchiveLayers {
             embeddings: false,
             taxonomy: false,
             projects: false,
+            annotations: false,
+            pinned_facts: false,
+            revisions: false,
+            workshop_reports: false,
+            narrative_plan: false,
+            analysis_status: false,
         }
     }
 }
@@ -162,6 +193,25 @@ pub struct ArchiveExportOptions {
     /// Include project containers.
     #[serde(default = "default_true")]
     pub include_projects: bool,
+    // ── v1.1.0 toggles (skill-output round-trip set) ─────────
+    /// Include inline annotations (comments / footnotes / citations).
+    #[serde(default = "default_true")]
+    pub include_annotations: bool,
+    /// Include pinned continuity facts.
+    #[serde(default = "default_true")]
+    pub include_pinned_facts: bool,
+    /// Include narrative revisions.
+    #[serde(default = "default_true")]
+    pub include_revisions: bool,
+    /// Include workshop critique reports.
+    #[serde(default = "default_true")]
+    pub include_workshop_reports: bool,
+    /// Include narrative plan (writer doc).
+    #[serde(default = "default_true")]
+    pub include_narrative_plan: bool,
+    /// Include the analysis-status registry (preserves lock state).
+    #[serde(default = "default_true")]
+    pub include_analysis_status: bool,
     /// Pretty-print JSON (larger but human-readable).
     #[serde(default = "default_true")]
     pub pretty: bool,
@@ -179,12 +229,22 @@ impl Default for ArchiveExportOptions {
             include_sources: true,
             include_chunks: true,
             include_state_versions: true,
+            // Inference results are regenerable from the source graph and can
+            // be large, so they stay opt-in. The rest of the v1.1.0 layers
+            // hold skill / human authored content that ISN'T regenerable, so
+            // they default ON.
             include_inference: false,
             include_analysis: true,
             include_tuning: true,
             include_embeddings: false,
             include_taxonomy: true,
             include_projects: true,
+            include_annotations: true,
+            include_pinned_facts: true,
+            include_revisions: true,
+            include_workshop_reports: true,
+            include_narrative_plan: true,
+            include_analysis_status: true,
             pretty: true,
             include_synthetic: false,
         }
@@ -236,6 +296,19 @@ pub struct ArchiveImportReport {
     pub prompts_created: usize,
     pub taxonomy_entries_created: usize,
     pub projects_created: usize,
+    // ── v1.1.0 counters ──────────────────────────────────────
+    #[serde(default)]
+    pub annotations_created: usize,
+    #[serde(default)]
+    pub pinned_facts_created: usize,
+    #[serde(default)]
+    pub revisions_created: usize,
+    #[serde(default)]
+    pub workshop_reports_created: usize,
+    #[serde(default)]
+    pub narrative_plans_created: usize,
+    #[serde(default)]
+    pub analysis_status_entries_created: usize,
     /// Old UUID → new UUID mappings for clashed records.
     pub id_remaps: HashMap<String, String>,
     /// Non-fatal warnings (e.g. dangling references in relaxed mode).
@@ -264,6 +337,12 @@ impl Default for ArchiveImportReport {
             prompts_created: 0,
             taxonomy_entries_created: 0,
             projects_created: 0,
+            annotations_created: 0,
+            pinned_facts_created: 0,
+            revisions_created: 0,
+            workshop_reports_created: 0,
+            narrative_plans_created: 0,
+            analysis_status_entries_created: 0,
             id_remaps: HashMap::new(),
             warnings: Vec::new(),
             errors: Vec::new(),

@@ -1,0 +1,28 @@
+[
+  {
+    "_doc": "=== INFERENCE RESULT: Output of an async analysis job. Usually regenerable — optional layer. ===",
+
+    "job_id": "job-causal-001",
+    "job_type": "CausalDiscovery",
+    "_job_type": "One of: MotivationInference, CausalDiscovery, Counterfactual, GameClassification, MissingLinks, AnomalyDetection, PatternMining, ArcClassification, MissingEventPrediction, CentralityAnalysis, EntropyAnalysis, BeliefModeling, EvidenceCombination, ArgumentationAnalysis, ContagionAnalysis, StyleProfile, StyleComparison, StyleAnomaly.",
+
+    "target_id": "01911234-5678-7000-8000-000000000001",
+    "_target_id": "UUID of the entity or situation this result pertains to.",
+
+    "result": {
+      "links": [
+        {"from_situation": "01911234-5678-7000-8000-000000000101", "to_situation": "01911234-5678-7000-8000-000000000102", "strength": 0.9}
+      ]
+    },
+    "_result": "Arbitrary JSON — the actual analysis output. Structure varies by job_type.",
+
+    "confidence": 0.85,
+    "explanation": "NOTEARS algorithm identified strong causal link from harbor meeting to document analysis",
+
+    "status": "Completed",
+    "_status": "One of: Pending, Running, Completed, Failed.",
+
+    "created_at": "2026-04-06T12:00:00Z",
+    "completed_at": "2026-04-06T12:01:00Z"
+  }
+]

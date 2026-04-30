@@ -1,0 +1,102 @@
+[
+  {
+    "_doc": "=== ENTITY: A person, place, thing, organization, or concept ===",
+
+    "id": "01911234-5678-7000-8000-000000000001",
+    "_id": "OPTIONAL. UUIDv7 preferred (time-ordered). Auto-generated on import if null/missing.",
+
+    "entity_type": "Actor",
+    "_entity_type": "REQUIRED. One of: Actor, Location, Artifact, Concept, Organization.",
+
+    "properties": {
+      "name": "Alexei Volkov",
+      "_name": "REQUIRED in properties. Display name used for entity resolution.",
+      "aliases": ["The Professor", "AV"],
+      "age": 45,
+      "nationality": "Russian",
+      "occupation": "University professor",
+      "description": "Tenured professor of political science with connections to intelligence circles"
+    },
+    "_properties": "REQUIRED. Arbitrary JSON object. Must contain at least 'name'. Add any fields relevant to the entity.",
+
+    "beliefs": {
+      "political_stance": "moderate reformist",
+      "key_assumption": "Believes diplomatic channels are compromised"
+    },
+    "_beliefs": "OPTIONAL. JSON object representing the entity's belief state, worldview, or mental model.",
+
+    "embedding": null,
+    "_embedding": "OPTIONAL. Dense float vector for semantic search. Usually null in archives (stored in embeddings/ layer).",
+
+    "maturity": "Candidate",
+    "_maturity": "OPTIONAL (default: Candidate). One of: Candidate (LLM-extracted), Reviewed (human-checked), Validated (multi-source confirmed), GroundTruth (authoritative).",
+
+    "confidence": 0.92,
+    "_confidence": "OPTIONAL (default: 1.0). Float 0.0-1.0. How certain we are this entity is correctly identified.",
+
+    "confidence_breakdown": {
+      "extraction": 0.95,
+      "source_credibility": 0.90,
+      "corroboration": 0.88,
+      "recency": 1.0
+    },
+    "_confidence_breakdown": "OPTIONAL. Decomposed confidence: extraction (LLM quality), source_credibility (trust-weighted), corroboration (independent agreement), recency (time decay). Composite = 0.2*extraction + 0.35*source + 0.35*corroboration + 0.1*recency.",
+
+    "provenance": [
+      {
+        "source_type": "chapter",
+        "source_id": "chapter-3",
+        "description": "First introduced in Chapter 3",
+        "timestamp": "2026-04-06T12:00:00Z",
+        "registered_source": null
+      }
+    ],
+    "_provenance": "OPTIONAL. Array of source references tracing where this entity was found.",
+
+    "extraction_method": "LlmParsed",
+    "_extraction_method": "OPTIONAL (default: StructuredImport). One of: LlmParsed, HumanEntered, StructuredImport, Sensor.",
+
+    "narrative_id": "example-narrative",
+    "_narrative_id": "OPTIONAL. Overridden on import to match the target narrative slug.",
+
+    "created_at": "2026-04-06T12:00:00Z",
+    "updated_at": "2026-04-06T12:00:00Z",
+    "_timestamps": "OPTIONAL. Auto-filled on import if missing.",
+
+    "deleted_at": null,
+    "_deleted_at": "OPTIONAL. ISO 8601 datetime for soft-delete. null = active."
+  },
+
+  {
+    "_doc": "=== ENTITY: Location example ===",
+    "id": "01911234-5678-7000-8000-000000000002",
+    "entity_type": "Location",
+    "properties": {
+      "name": "Harbor District",
+      "city": "Odessa",
+      "country": "Ukraine",
+      "description": "Commercial port area with warehouses and shipping offices",
+      "coordinates": {"lat": 46.4825, "lon": 30.7233}
+    },
+    "confidence": 0.95,
+    "narrative_id": "example-narrative",
+    "created_at": "2026-04-06T12:00:00Z",
+    "updated_at": "2026-04-06T12:00:00Z"
+  },
+
+  {
+    "_doc": "=== ENTITY: Organization example ===",
+    "id": "01911234-5678-7000-8000-000000000003",
+    "entity_type": "Organization",
+    "properties": {
+      "name": "Meridian Trading Co.",
+      "type": "shell company",
+      "founded": "2019",
+      "description": "Front company for smuggling operations"
+    },
+    "confidence": 0.78,
+    "narrative_id": "example-narrative",
+    "created_at": "2026-04-06T12:00:00Z",
+    "updated_at": "2026-04-06T12:00:00Z"
+  }
+]

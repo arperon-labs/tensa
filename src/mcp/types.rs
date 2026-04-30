@@ -470,6 +470,39 @@ pub struct DeleteProjectRequest {
     pub cascade: Option<bool>,
 }
 
+/// Parameters for `run_full_analysis` — headless equivalent of Studio's
+/// "Run Full Analysis" button. Submits every algorithmic inference job for
+/// a narrative, skipping rows whose analysis-status entry is locked unless
+/// `force = true`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RunFullAnalysisRequest {
+    /// Narrative ID (slug or UUID).
+    pub narrative_id: String,
+    /// Optional tier subset for the HTTP backend (`foundational`, `structural`,
+    /// `per_actor`, `temporal`, `advanced`). Ignored by the embedded backend,
+    /// which always submits its curated flat list.
+    #[serde(default)]
+    pub tiers: Option<Vec<String>>,
+    /// When `true`, locked Skill / Manual rows are re-run and overwritten.
+    /// Defaults to `false`.
+    #[serde(default)]
+    pub force: bool,
+}
+
+/// Parameters for `backfill_embeddings` — generates embeddings for entities
+/// and situations missing them. Requires an embedding provider configured
+/// server-side.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct BackfillEmbeddingsRequest {
+    /// Optional narrative ID to scope the backfill. When omitted, sweeps all
+    /// `Candidate`-maturity rows.
+    #[serde(default)]
+    pub narrative_id: Option<String>,
+    /// When `true`, re-embeds rows that already have an embedding.
+    #[serde(default)]
+    pub force: bool,
+}
+
 /// Parameters for the `ask` tool — RAG question answering.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct AskRequest {

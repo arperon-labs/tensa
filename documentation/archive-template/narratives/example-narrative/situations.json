@@ -1,0 +1,161 @@
+[
+  {
+    "_doc": "=== SITUATION: An event, scene, action, or state in the narrative ===",
+
+    "id": "01911234-5678-7000-8000-000000000101",
+    "_id": "OPTIONAL. UUIDv7 preferred. Auto-generated if missing.",
+
+    "name": "Clandestine Meeting at the Harbor",
+    "_name": "OPTIONAL but recommended. Short 5-8 word title for the event.",
+
+    "description": "Volkov meets an unknown contact at Warehouse 7 to exchange documents",
+    "_description": "OPTIONAL but recommended. 1-2 sentence summary of what happens.",
+
+    "temporal": {
+      "start": "2025-03-15T22:30:00Z",
+      "_start": "OPTIONAL. ISO 8601 datetime. When the situation begins.",
+      "end": "2025-03-15T23:15:00Z",
+      "_end": "OPTIONAL. When the situation ends. null = point event or unknown.",
+      "granularity": "Approximate",
+      "_granularity": "OPTIONAL (default: Unknown). One of: Exact, Day, Approximate, Unknown.",
+      "relations": [
+        {
+          "target_situation": "01911234-5678-7000-8000-000000000102",
+          "relation": "Before"
+        }
+      ],
+      "_relations": "OPTIONAL. Allen temporal relations to other situations. Relations: Before, After, Meets, MetBy, Overlaps, OverlappedBy, During, Contains, Starts, StartedBy, Finishes, FinishedBy, Equals."
+    },
+    "_temporal": "OPTIONAL. Temporal anchoring. If fully omitted, defaults to Unknown granularity with no dates.",
+
+    "spatial": {
+      "latitude": 46.4825,
+      "longitude": 30.7233,
+      "precision": "Area",
+      "_precision": "One of: Exact, Area, Region, Approximate, Unknown.",
+      "location_entity": "01911234-5678-7000-8000-000000000002",
+      "_location_entity": "OPTIONAL. UUID of a Location entity. Creates a typed spatial reference.",
+      "description": "Warehouse 7, Harbor District, Odessa"
+    },
+    "_spatial": "OPTIONAL. Geographic anchor. Can have lat/lon, a location entity reference, or just a text description.",
+
+    "game_structure": {
+      "game_type": "AsymmetricInformation",
+      "_game_type": "One of: PrisonersDilemma, Coordination, Signaling, Auction, Bargaining, ZeroSum, AsymmetricInformation, or Custom(string).",
+      "info_structure": "Incomplete",
+      "_info_structure": "One of: Complete, Incomplete, Imperfect, AsymmetricBecomingComplete, or Custom(string).",
+      "description": "Volkov knows the document contents; contact does not",
+      "maturity": "Candidate"
+    },
+    "_game_structure": "OPTIONAL. Game-theoretic classification of the strategic interaction in this situation.",
+
+    "causes": [],
+    "_causes": "OPTIONAL. Embedded causal links pointing INTO this situation. Usually empty — use causal_links.json instead for clarity.",
+
+    "deterministic": {"document_count": 3, "handoff_method": "dead drop"},
+    "_deterministic": "OPTIONAL. JSON object for known facts/formulas about this situation.",
+
+    "probabilistic": {"interception_risk": 0.15},
+    "_probabilistic": "OPTIONAL. JSON object for probabilistic assessments about this situation.",
+
+    "embedding": null,
+    "_embedding": "OPTIONAL. Dense float vector. Usually null in archives.",
+
+    "raw_content": [
+      {
+        "content_type": "Text",
+        "content": "At half past ten, a figure emerged from the shadows of Warehouse 7. Volkov recognized the gait immediately — the contact was late, but here.",
+        "source": null
+      },
+      {
+        "content_type": "Dialogue",
+        "content": "\"You have the documents?\" the contact asked without greeting.",
+        "source": null
+      },
+      {
+        "content_type": "Observation",
+        "content": "Security cameras in the area had been disabled since 21:00.",
+        "source": null
+      }
+    ],
+    "_raw_content": "OPTIONAL. Array of content blocks from the source text. content_type: Text (narration), Dialogue (speech), Observation (analyst note), Document (quoted doc), MediaRef (image/video URL). Each block can have a source reference.",
+
+    "narrative_level": "Scene",
+    "_narrative_level": "OPTIONAL (default: Event). Granularity: Story > Arc > Sequence > Scene > Beat > Event.",
+
+    "discourse": {
+      "order": null,
+      "_order": "OPTIONAL. Narrative time distortion: analepsis (flashback), prolepsis (flash-forward), simultaneous.",
+      "duration": "scene",
+      "_duration": "OPTIONAL. Narrative pacing: scene (real-time), summary (compressed), ellipsis (skipped), pause (digression), stretch (slow-motion).",
+      "focalization": "01911234-5678-7000-8000-000000000001",
+      "_focalization": "OPTIONAL. UUID of the entity whose perspective we see this through.",
+      "voice": "heterodiegetic",
+      "_voice": "OPTIONAL. Narrator type: homodiegetic (narrator is a character) or heterodiegetic (external narrator)."
+    },
+    "_discourse": "OPTIONAL. Narratological annotation describing HOW the story is told (not what happens).",
+
+    "maturity": "Candidate",
+    "confidence": 0.88,
+    "confidence_breakdown": null,
+
+    "extraction_method": "LlmParsed",
+    "_extraction_method": "OPTIONAL. One of: LlmParsed, HumanEntered, StructuredImport, Sensor.",
+
+    "provenance": [],
+    "narrative_id": "example-narrative",
+
+    "source_chunk_id": null,
+    "_source_chunk_id": "OPTIONAL. UUID linking to a ChunkRecord in chunks/chunks.json. Tracks which ingested text chunk produced this situation.",
+
+    "created_at": "2026-04-06T12:00:00Z",
+    "updated_at": "2026-04-06T12:00:00Z",
+    "deleted_at": null
+  },
+
+  {
+    "_doc": "=== SITUATION: Minimal example — only required/recommended fields ===",
+    "id": "01911234-5678-7000-8000-000000000102",
+    "name": "Document Analysis",
+    "description": "Volkov reviews the exchanged documents at his apartment",
+    "temporal": {
+      "start": "2025-03-16T08:00:00Z",
+      "end": null,
+      "granularity": "Approximate",
+      "relations": []
+    },
+    "raw_content": [
+      {"content_type": "Text", "content": "Morning light fell across the scattered papers. The documents confirmed what Volkov had suspected."}
+    ],
+    "narrative_level": "Scene",
+    "confidence": 0.85,
+    "extraction_method": "LlmParsed",
+    "narrative_id": "example-narrative",
+    "created_at": "2026-04-06T12:00:00Z",
+    "updated_at": "2026-04-06T12:00:00Z"
+  },
+
+  {
+    "_doc": "=== SITUATION: A consequence/effect event ===",
+    "id": "01911234-5678-7000-8000-000000000103",
+    "name": "Meridian Investigation Launched",
+    "description": "Authorities open a formal investigation into Meridian Trading Co. based on leaked documents",
+    "temporal": {
+      "start": "2025-03-20T00:00:00Z",
+      "end": null,
+      "granularity": "Day",
+      "relations": [
+        {"target_situation": "01911234-5678-7000-8000-000000000102", "relation": "After"}
+      ]
+    },
+    "raw_content": [
+      {"content_type": "Text", "content": "The prosecutor's office announced a preliminary investigation."}
+    ],
+    "narrative_level": "Event",
+    "confidence": 0.92,
+    "extraction_method": "LlmParsed",
+    "narrative_id": "example-narrative",
+    "created_at": "2026-04-06T12:00:00Z",
+    "updated_at": "2026-04-06T12:00:00Z"
+  }
+]

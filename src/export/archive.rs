@@ -395,6 +395,133 @@ pub fn export_archive(
                 )?;
             }
         }
+
+        // ── Annotations layer (v1.1.0) ───────────────────────
+        // Skill output from `/tensa-narrative-llm <nid> dramatic-irony` etc.
+        // lands here. Uses the bucketed scan helper rather than per-situation
+        // calls — one O(|ann/|) prefix scan instead of N round-trips.
+        if opts.include_annotations {
+            if let Ok(buckets) =
+                crate::writer::annotation::list_annotations_for_scenes(&*store, &situation_ids)
+            {
+                let mut annotations: Vec<_> =
+                    buckets.into_values().flat_map(|v| v.into_iter()).collect();
+                annotations.sort_by_key(|a| (a.situation_id, a.span.0));
+                if !annotations.is_empty() {
+                    layers.annotations = true;
+                    write_json(
+                        &mut zip,
+                        &file_opts,
+                        &format!("{prefix}annotations/annotations.json"),
+                        &annotations,
+                        opts.pretty,
+                    )?;
+                }
+            }
+        }
+
+        // ── Pinned facts layer (v1.1.0) ──────────────────────
+        // What `/tensa-narrative-llm <nid> commitments` writes.
+        if opts.include_pinned_facts {
+            if let Ok(facts) = crate::narrative::continuity::list_pinned_facts(&*store, nar_id) {
+                if !facts.is_empty() {
+                    layers.pinned_facts = true;
+                    write_json(
+                        &mut zip,
+                        &file_opts,
+                        &format!("{prefix}pinned_facts/pinned_facts.json"),
+                        &facts,
+                        opts.pretty,
+                    )?;
+                }
+            }
+        }
+
+        // ── Revisions layer (v1.1.0) ─────────────────────────
+        // What `commit_narrative_revision` (called by `narrative-diagnose-and-repair`)
+        // writes. We export the FULL revisions (snapshot + author + message),
+        // not just the per-narrative summary index, so a re-imported archive
+        // can restore any historical state.
+        if opts.include_revisions {
+            if let Ok(summaries) = crate::narrative::revision::list_revisions(&*store, nar_id) {
+                let mut revisions = Vec::with_capacity(summaries.len());
+                for summary in &summaries {
+                    if let Ok(rev) = crate::narrative::revision::get_revision(&*store, &summary.id)
+                    {
+                        revisions.push(rev);
+                    }
+                }
+                if !revisions.is_empty() {
+                    layers.revisions = true;
+                    write_json(
+                        &mut zip,
+                        &file_opts,
+                        &format!("{prefix}revisions/revisions.json"),
+                        &revisions,
+                        opts.pretty,
+                    )?;
+                }
+            }
+        }
+
+        // ── Workshop reports layer (v1.1.0) ──────────────────
+        if opts.include_workshop_reports {
+            if let Ok(summaries) = crate::narrative::workshop::list_reports(&*store, nar_id) {
+                let mut reports = Vec::with_capacity(summaries.len());
+                for summary in &summaries {
+                    if let Ok(report) =
+                        crate::narrative::workshop::get_report(&*store, &summary.id)
+                    {
+                        reports.push(report);
+                    }
+                }
+                if !reports.is_empty() {
+                    layers.workshop_reports = true;
+                    write_json(
+                        &mut zip,
+                        &file_opts,
+                        &format!("{prefix}workshop_reports/workshop_reports.json"),
+                        &reports,
+                        opts.pretty,
+                    )?;
+                }
+            }
+        }
+
+        // ── Narrative plan layer (v1.1.0) ────────────────────
+        if opts.include_narrative_plan {
+            if let Ok(Some(plan)) = crate::narrative::plan::get_plan(&*store, nar_id) {
+                layers.narrative_plan = true;
+                write_json(
+                    &mut zip,
+                    &file_opts,
+                    &format!("{prefix}plan/narrative_plan.json"),
+                    &plan,
+                    opts.pretty,
+                )?;
+            }
+        }
+
+        // ── Analysis-status layer (v1.1.0) ───────────────────
+        // Preserves the lock state — without this, a re-imported archive
+        // would lose `Source: Skill` + `locked: true` rows and a subsequent
+        // bulk-analysis run would silently overwrite skill-attested results.
+        if opts.include_analysis_status {
+            let status_store =
+                crate::analysis_status::AnalysisStatusStore::new(store.clone());
+            if let Ok(rows) = status_store.list_for_narrative(nar_id) {
+                if !rows.is_empty() {
+                    layers.analysis_status = true;
+                    write_json(
+                        &mut zip,
+                        &file_opts,
+                        &format!("{prefix}analysis_status/entries.json"),
+                        &rows,
+                        opts.pretty,
+                    )?;
+                }
+            }
+        }
     }
 
     // ── Taxonomy layer ───────────────────────────────────────
@@ -697,6 +824,12 @@ mod tests {
             include_tuning: false,
             include_taxonomy: false,
             include_projects: false,
+            include_annotations: false,
+            include_pinned_facts: false,
+            include_revisions: false,
+            include_workshop_reports: false,
+            include_narrative_plan: false,
+            include_analysis_status: false,
             pretty: false,
             include_synthetic: false,
         };

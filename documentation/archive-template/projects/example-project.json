@@ -1,0 +1,21 @@
+{
+  "_doc": "=== PROJECT: Top-level container grouping related narratives ===",
+
+  "id": "example-project",
+  "_id": "REQUIRED. Slug identifier.",
+
+  "title": "Harbor Investigation",
+  "_title": "REQUIRED. Display title.",
+
+  "description": "Multi-narrative investigation into harbor district smuggling operations",
+  "_description": "OPTIONAL.",
+
+  "tags": ["active", "high-priority"],
+  "_tags": "OPTIONAL. Free-form tags.",
+
+  "narrative_count": 1,
+  "_narrative_count": "Informational cache. Recalculated on import.",
+
+  "created_at": "2026-04-06T12:00:00Z",
+  "updated_at": "2026-04-06T12:00:00Z"
+}

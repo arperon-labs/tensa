@@ -472,6 +472,159 @@ pub fn import_archive(
                 }
             }
         }
+
+        // ── Annotations (v1.1.0) ─────────────────────────────
+        if manifest.layers.annotations {
+            if let Ok(annotations) = read_json_file::<Vec<crate::writer::annotation::Annotation>>(
+                &mut archive,
+                &format!("{prefix}annotations/annotations.json"),
+            ) {
+                for mut ann in annotations {
+                    if let Some(&new_id) = remap.get(&ann.situation_id) {
+                        ann.situation_id = new_id;
+                    }
+                    // create_annotation re-keys against ann.id; ID clashes are
+                    // not a concern across narratives so we keep the originals.
+                    match crate::writer::annotation::create_annotation(&*store, ann) {
+                        Ok(_) => report.annotations_created += 1,
+                        Err(e) => report.warnings.push(format!("Annotation: {e}")),
+                    }
+                }
+            }
+        }
+
+        // ── Pinned facts (v1.1.0) ────────────────────────────
+        if manifest.layers.pinned_facts {
+            if let Ok(facts) = read_json_file::<Vec<crate::types::PinnedFact>>(
+                &mut archive,
+                &format!("{prefix}pinned_facts/pinned_facts.json"),
+            ) {
+                for mut fact in facts {
+                    fact.narrative_id = final_slug.clone();
+                    if let Some(ref mut entity_id) = fact.entity_id {
+                        if let Some(&new_id) = remap.get(entity_id) {
+                            *entity_id = new_id;
+                        }
+                    }
+                    match crate::narrative::continuity::create_pinned_fact(&*store, fact) {
+                        Ok(_) => report.pinned_facts_created += 1,
+                        Err(e) => report.warnings.push(format!("PinnedFact: {e}")),
+                    }
+                }
+            }
+        }
+
+        // ── Revisions (v1.1.0) ───────────────────────────────
+        // Stored verbatim so revision history (snapshot + author + message +
+        // parent chain) survives the round-trip. The snapshot inside each
+        // revision references entity / situation IDs that may have been
+        // remapped during core import; we cannot rewrite serialized snapshot
+        // bytes safely, so when remap is non-empty we emit a warning and
+        // keep the original snapshot intact (revisions are advisory history,
+        // not load-bearing for the live graph).
+        if manifest.layers.revisions {
+            if let Ok(revisions) = read_json_file::<Vec<crate::types::NarrativeRevision>>(
+                &mut archive,
+                &format!("{prefix}revisions/revisions.json"),
+            ) {
+                let warned_remap = !remap.is_empty();
+                for mut rev in revisions {
+                    rev.narrative_id = final_slug.clone();
+                    let key = crate::hypergraph::keys::revision_key(&rev.id);
+                    let idx_key = crate::hypergraph::keys::revision_narrative_index_key(
+                        &rev.narrative_id,
+                        &rev.id,
+                    );
+                    let bytes = match serde_json::to_vec(&rev) {
+                        Ok(b) => b,
+                        Err(e) => {
+                            report.warnings.push(format!("Revision serialize: {e}"));
+                            continue;
+                        }
+                    };
+                    let res = store
+                        .put(&key, &bytes)
+                        .and_then(|_| store.put(&idx_key, rev.id.as_bytes()));
+                    match res {
+                        Ok(_) => report.revisions_created += 1,
+                        Err(e) => report.warnings.push(format!("Revision: {e}")),
+                    }
+                }
+                if warned_remap && report.revisions_created > 0 {
+                    report.warnings.push(
+                        "Revisions imported with original UUIDs in their snapshots — \
+                         restoring an old revision may reference remapped entities/situations."
+                            .into(),
+                    );
+                }
+            }
+        }
+
+        // ── Workshop reports (v1.1.0) ────────────────────────
+        if manifest.layers.workshop_reports {
+            if let Ok(reports) = read_json_file::<Vec<crate::narrative::workshop::WorkshopReport>>(
+                &mut archive,
+                &format!("{prefix}workshop_reports/workshop_reports.json"),
+            ) {
+                for mut wr in reports {
+                    wr.narrative_id = final_slug.clone();
+                    let key = crate::hypergraph::keys::workshop_report_key(&wr.id);
+                    let idx_key = crate::hypergraph::keys::workshop_report_narrative_index_key(
+                        &wr.narrative_id,
+                        &wr.id,
+                    );
+                    let bytes = match serde_json::to_vec(&wr) {
+                        Ok(b) => b,
+                        Err(e) => {
+                            report.warnings.push(format!("WorkshopReport serialize: {e}"));
+                            continue;
+                        }
+                    };
+                    let res = store
+                        .put(&key, &bytes)
+                        .and_then(|_| store.put(&idx_key, wr.id.as_bytes()));
+                    match res {
+                        Ok(_) => report.workshop_reports_created += 1,
+                        Err(e) => report.warnings.push(format!("WorkshopReport: {e}")),
+                    }
+                }
+            }
+        }
+
+        // ── Narrative plan (v1.1.0) ──────────────────────────
+        if manifest.layers.narrative_plan {
+            if let Ok(plan) = read_json_file::<crate::types::NarrativePlan>(
+                &mut archive,
+                &format!("{prefix}plan/narrative_plan.json"),
+            ) {
+                let mut p = plan;
+                p.narrative_id = final_slug.clone();
+                match crate::narrative::plan::upsert_plan(&*store, p) {
+                    Ok(_) => report.narrative_plans_created += 1,
+                    Err(e) => report.warnings.push(format!("NarrativePlan: {e}")),
+                }
+            }
+        }
+
+        // ── Analysis-status registry (v1.1.0) ────────────────
+        if manifest.layers.analysis_status {
+            if let Ok(entries) = read_json_file::<
+                Vec<crate::analysis_status::AnalysisStatusEntry>,
+            >(
+                &mut archive,
+                &format!("{prefix}analysis_status/entries.json"),
+            ) {
+                let status_store =
+                    crate::analysis_status::AnalysisStatusStore::new(store.clone());
+                for mut entry in entries {
+                    entry.narrative_id = final_slug.clone();
+                    match status_store.upsert(&entry) {
+                        Ok(_) => report.analysis_status_entries_created += 1,
+                        Err(e) => report.warnings.push(format!("AnalysisStatusEntry: {e}")),
+                    }
+                }
+            }
+        }
     }
 
     // Build remap string map for report
@@ -869,6 +1022,12 @@ mod tests {
             include_embeddings: false,
             include_taxonomy: false,
             include_projects: false,
+            include_annotations: false,
+            include_pinned_facts: false,
+            include_revisions: false,
+            include_workshop_reports: false,
+            include_narrative_plan: false,
+            include_analysis_status: false,
             pretty: true,
             include_synthetic: false,
         };
@@ -1087,5 +1246,169 @@ mod tests {
         // Entity should be in the custom slug
         let entities = target_hg.list_entities_by_narrative("custom-slug").unwrap();
         assert_eq!(entities.len(), 1);
+    }
+
+    /// v1.1.0: round-trip the six new layers. Build a narrative with an
+    /// annotation, a pinned fact, a narrative plan, and an analysis-status
+    /// row, export with all-on options, import into a fresh store, and verify
+    /// every record is reachable + the lock state survives.
+    #[test]
+    fn test_v1_1_layers_roundtrip() {
+        use crate::analysis_status::{
+            AnalysisSource, AnalysisStatusEntry, AnalysisStatusStore,
+        };
+        use crate::narrative::continuity;
+        use crate::narrative::plan;
+        use crate::types::{InferenceJobType, NarrativePlan, PinnedFact};
+        use crate::writer::annotation::{create_annotation, Annotation, AnnotationKind};
+
+        let (_seed_bytes, source_store) = create_test_archive();
+        let source_hg = Hypergraph::new(source_store.clone());
+        let situations = source_hg.list_situations_by_narrative("test-nar").unwrap();
+        let sit_id = situations[0].id;
+        let now = Utc::now();
+
+        // Annotation pointing at the seeded situation.
+        create_annotation(
+            &*source_store,
+            Annotation {
+                id: Uuid::now_v7(),
+                situation_id: sit_id,
+                kind: AnnotationKind::Comment,
+                span: (0, 5),
+                body: "needs more pacing".into(),
+                source_id: None,
+                chunk_id: None,
+                author: Some("skill:tensa-narrative-llm".into()),
+                detached: false,
+                created_at: now,
+                updated_at: now,
+            },
+        )
+        .unwrap();
+
+        // Pinned fact (commitment).
+        continuity::create_pinned_fact(
+            &*source_store,
+            PinnedFact {
+                id: Uuid::now_v7(),
+                narrative_id: "test-nar".into(),
+                entity_id: None,
+                key: "commitment".into(),
+                value: "Chekhov's gun introduced in scene 1".into(),
+                note: Some("skill:tensa-narrative-llm".into()),
+                created_at: now,
+                updated_at: now,
+            },
+        )
+        .unwrap();
+
+        // Narrative plan — only required fields; the rest default.
+        plan::upsert_plan(
+            &*source_store,
+            NarrativePlan {
+                narrative_id: "test-nar".into(),
+                logline: None,
+                synopsis: None,
+                premise: Some("Alice navigates the unknown".into()),
+                themes: vec!["agency".into()],
+                central_conflict: None,
+                plot_beats: vec![],
+                style: Default::default(),
+                length: Default::default(),
+                setting: Default::default(),
+                notes: String::new(),
+                target_audience: None,
+                comp_titles: vec![],
+                content_warnings: vec![],
+                custom: std::collections::HashMap::new(),
+                created_at: now,
+                updated_at: now,
+            },
+        )
+        .unwrap();
+
+        // Analysis-status row — Skill source, locked.
+        let status_store = AnalysisStatusStore::new(source_store.clone());
+        status_store
+            .upsert(&AnalysisStatusEntry {
+                narrative_id: "test-nar".into(),
+                job_type: InferenceJobType::ArcClassification,
+                scope: "story".into(),
+                source: AnalysisSource::Skill,
+                skill: Some("tensa-narrative-llm".into()),
+                model: Some("claude-opus-4-7".into()),
+                completed_at: now,
+                locked: true,
+                summary: Some("Cinderella arc detected".into()),
+                confidence: Some(0.88),
+                result_refs: vec![],
+            })
+            .unwrap();
+
+        // Export with all v1.1.0 layers ON (default).
+        let opts = ArchiveExportOptions::default();
+        let bytes = export_archive(&["test-nar"], &source_hg, &opts).unwrap();
+
+        // Import into a fresh store.
+        let target_store = Arc::new(MemoryStore::new());
+        let target_hg = Hypergraph::new(target_store.clone());
+        let report =
+            import_archive(&bytes, &target_hg, &ArchiveImportOptions::default()).unwrap();
+
+        // The four new counters should each be 1.
+        assert_eq!(
+            report.annotations_created, 1,
+            "annotations_created (errors: {:?}, warnings: {:?})",
+            report.errors, report.warnings
+        );
+        assert_eq!(report.pinned_facts_created, 1);
+        assert_eq!(report.narrative_plans_created, 1);
+        assert_eq!(report.analysis_status_entries_created, 1);
+
+        // Annotation body must round-trip verbatim.
+        let target_situations = target_hg.list_situations_by_narrative("test-nar").unwrap();
+        let target_sit_id = target_situations[0].id;
+        let target_anns =
+            crate::writer::annotation::list_annotations_for_situation(&*target_store, &target_sit_id)
+                .unwrap();
+        assert_eq!(target_anns.len(), 1);
+        assert_eq!(target_anns[0].body, "needs more pacing");
+        assert_eq!(
+            target_anns[0].author.as_deref(),
+            Some("skill:tensa-narrative-llm")
+        );
+
+        // Pinned fact key/value must round-trip verbatim.
+        let target_facts =
+            crate::narrative::continuity::list_pinned_facts(&*target_store, "test-nar").unwrap();
+        assert_eq!(target_facts.len(), 1);
+        assert_eq!(target_facts[0].key, "commitment");
+        assert_eq!(
+            target_facts[0].value,
+            "Chekhov's gun introduced in scene 1"
+        );
+
+        // Narrative plan premise must round-trip.
+        let target_plan = crate::narrative::plan::get_plan(&*target_store, "test-nar")
+            .unwrap()
+            .expect("narrative plan should round-trip");
+        assert_eq!(
+            target_plan.premise.as_deref(),
+            Some("Alice navigates the unknown")
+        );
+        assert_eq!(target_plan.themes, vec!["agency".to_string()]);
+
+        // Lock state must survive — this is the load-bearing property: a
+        // re-imported archive with a Skill+locked row should still report
+        // locked=true so subsequent bulk-analysis runs skip it.
+        let target_status = AnalysisStatusStore::new(target_store);
+        let row = target_status
+            .get("test-nar", &InferenceJobType::ArcClassification, "story")
+            .unwrap()
+            .expect("analysis-status row should round-trip");
+        assert_eq!(row.source, AnalysisSource::Skill);
+        assert!(row.locked, "lock state must survive export/import");
+        assert_eq!(row.skill.as_deref(), Some("tensa-narrative-llm"));
     }
 }

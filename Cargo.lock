@@ -3547,7 +3547,7 @@ dependencies = [
 
 [[package]]
 name = "tensa"
-version = "0.79.2"
+version = "0.79.6"
 dependencies = [
  "anyhow",
  "axum",

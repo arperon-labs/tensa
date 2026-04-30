@@ -1081,6 +1081,24 @@ EXPORT NARRATIVE "narrative_id" AS format
 
 The `archive` format produces a ZIP of JSON files in a human-readable directory structure. It preserves all data losslessly — entities, situations, participations, causal links, sources, attributions, contentions, chunks, state versions, inference results, community summaries, tuned prompts, taxonomy, and projects. Archives can be imported via `POST /import/archive` or built externally.
 
+**v1.1.0 (TENSA 0.79.5+) added six new optional layers** so external skill output (e.g. from `/tensa-narrative-llm`) round-trips losslessly:
+
+| Layer | What it preserves | Source |
+|---|---|---|
+| `annotations` | Inline comments / footnotes / citations on situation prose, byte-span anchored | `/tensa-narrative-llm` skill (dramatic-irony, subplots, arc-classification) + reviewer notes |
+| `pinned_facts` | Continuity facts: entity property pins + narrative-wide rules | `/tensa-narrative-llm commitments`, manual writer entries |
+| `revisions` | Git-like narrative snapshots with author + message + parent chain | `commit_narrative_revision` (called by `narrative-diagnose-and-repair`) |
+| `workshop_reports` | Three-tier critique reports with structured findings | `run_workshop` |
+| `narrative_plan` | Writer doc — logline / synopsis / premise / themes / plot beats / style targets | Writer flow |
+| `analysis_status` | Per-narrative registry of which inference jobs ran, by what source, **with lock state**. Without this layer, a re-imported archive would lose the `Source: Skill, locked: true` rows that protect skill-attested results from being silently overwritten by the next bulk-analysis run | TENSA worker pool + `/tensa-narrative-llm` skill |
+
+The `GET /narratives/:id/export?format=archive` endpoint accepts a `&preset=full|minimal|default` query parameter:
+- `default` (omitted) — every v1.1.0 layer ON; inference + embeddings + synthetic OFF for size.
+- `full` — all v1.1.0 layers + inference results + embeddings + synthetic records.
+- `minimal` — core graph data only.
+
+For per-flag control use `POST /export/archive` with an `ArchiveExportOptions` body. See [`archive-template/`](archive-template/) for the canonical annotated example with every field documented.
+
 ## 3.13 EXPLAIN Prefix
 
 Returns the query execution plan as JSON without running the query. Works with MATCH, INFER, DISCOVER, and PATH queries.

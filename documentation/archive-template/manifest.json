@@ -1,0 +1,64 @@
+{
+  "_doc": "Top-level manifest. REQUIRED. First file any reader should parse.",
+
+  "tensa_archive_version": "1.1.0",
+  "_tensa_archive_version": "Semver format version. REQUIRED. Readers reject unknown major versions. v1.1.0 (TENSA 0.79.5+) added six new optional layers — annotations, pinned_facts, revisions, workshop_reports, narrative_plan, analysis_status — required for /tensa-narrative-llm skill output to round-trip losslessly. Older v1.0.0 archives import cleanly; older readers ignore unknown layer keys.",
+
+  "created_at": "2026-04-06T12:00:00Z",
+  "_created_at": "ISO 8601 datetime. REQUIRED. When the archive was created.",
+
+  "created_by": {
+    "tool": "my-tool",
+    "version": "1.0.0"
+  },
+  "_created_by": "OPTIONAL. Identifies the tool that created the archive. External tools should identify themselves.",
+
+  "narratives": ["example-narrative"],
+  "_narratives": "REQUIRED. List of narrative slug strings. Each must have a matching narratives/{slug}/ directory.",
+
+  "layers": {
+    "core": true,
+    "_core": "Always true. Entities, situations, participations.",
+    "sources": false,
+    "_sources": "Source intelligence (sources.json, attributions.json, contentions.json).",
+    "chunks": false,
+    "_chunks": "Original ingested text chunks (chunks.json).",
+    "state_versions": false,
+    "_state_versions": "Entity property snapshots at each situation (state_versions.json).",
+    "inference": false,
+    "_inference": "Computed inference results (results.json). Regenerable — usually omitted.",
+    "analysis": false,
+    "_analysis": "Community summaries, style profiles (communities.json).",
+    "tuning": false,
+    "_tuning": "LLM prompt tuning data (tuned_prompt.json).",
+    "embeddings": false,
+    "_embeddings": "Binary vector embeddings (.bin files + embedding_index.json).",
+    "taxonomy": false,
+    "_taxonomy": "Custom taxonomy entries (taxonomy/taxonomy.json).",
+    "projects": false,
+    "_projects": "Project containers (projects/{slug}.json).",
+
+    "annotations": false,
+    "_annotations": "v1.1.0 — Inline annotations on situation prose (comments, footnotes, citations). Output of /tensa-narrative-llm dramatic-irony, subplots, etc. File: narratives/{slug}/annotations/annotations.json.",
+    "pinned_facts": false,
+    "_pinned_facts": "v1.1.0 — Continuity facts (W4). Output of /tensa-narrative-llm commitments. File: narratives/{slug}/pinned_facts/pinned_facts.json.",
+    "revisions": false,
+    "_revisions": "v1.1.0 — Full narrative revisions (snapshot + author + message + parent chain). Output of /tensa-narrative-llm narrative-diagnose-and-repair. File: narratives/{slug}/revisions/revisions.json.",
+    "workshop_reports": false,
+    "_workshop_reports": "v1.1.0 — Three-tier workshop critique reports. File: narratives/{slug}/workshop_reports/workshop_reports.json.",
+    "narrative_plan": false,
+    "_narrative_plan": "v1.1.0 — Writer doc (logline, synopsis, premise, themes, plot beats, style targets). File: narratives/{slug}/plan/narrative_plan.json.",
+    "analysis_status": false,
+    "_analysis_status": "v1.1.0 — Per-narrative analysis-status registry. Preserves Source: Skill + locked: true rows so a re-imported archive does NOT silently re-run skill-attested analyses. File: narratives/{slug}/analysis_status/entries.json."
+  },
+  "_layers": "REQUIRED. Boolean flags declaring which optional layers are present. Readers use this to skip missing dirs.",
+
+  "strict_references": false,
+  "_strict_references": "OPTIONAL (default: true). When false, dangling UUID references produce warnings instead of import errors. Set false for external creators who may not have all UUIDs.",
+
+  "id_namespace": null,
+  "_id_namespace": "OPTIONAL. Opaque string identifying the source Tensa instance. Used for dedup heuristics.",
+
+  "description": "Example archive showing all fields and their documentation.",
+  "_description": "OPTIONAL. Human-readable description of the archive contents."
+}

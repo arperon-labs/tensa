@@ -1,0 +1,31 @@
+[
+  {
+    "_doc": "=== CAUSAL LINK: Directed cause-effect relationship between situations ===",
+
+    "from_situation": "01911234-5678-7000-8000-000000000101",
+    "_from_situation": "REQUIRED. UUID of the causing situation.",
+
+    "to_situation": "01911234-5678-7000-8000-000000000102",
+    "_to_situation": "REQUIRED. UUID of the resulting situation.",
+
+    "mechanism": "Documents obtained at the harbor meeting are the subject of Volkov's analysis",
+    "_mechanism": "OPTIONAL. Human-readable description of HOW the cause produces the effect.",
+
+    "strength": 0.9,
+    "_strength": "OPTIONAL (default: 0.5). Float 0.0-1.0. How strongly the cause contributes to the effect.",
+
+    "causal_type": "Necessary",
+    "_causal_type": "OPTIONAL (default: Contributing). One of: Necessary (effect cannot happen without cause), Sufficient (cause alone guarantees effect), Contributing (cause increases likelihood), Enabling (cause makes effect possible but doesn't trigger it).",
+
+    "maturity": "Candidate",
+    "_maturity": "OPTIONAL (default: Candidate). Same maturity levels as entities."
+  },
+  {
+    "from_situation": "01911234-5678-7000-8000-000000000102",
+    "to_situation": "01911234-5678-7000-8000-000000000103",
+    "mechanism": "Volkov's document analysis provides evidence that triggers the investigation",
+    "strength": 0.75,
+    "causal_type": "Contributing",
+    "maturity": "Candidate"
+  }
+]

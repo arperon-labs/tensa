@@ -1,0 +1,49 @@
+[
+  {
+    "_doc": "=== ANNOTATION: Inline note on situation prose (comment, footnote, or citation) ===",
+
+    "id": "01911234-5678-7000-8000-000000000301",
+    "_id": "OPTIONAL. UUIDv7. Auto-generated on import if null/missing.",
+
+    "situation_id": "01911234-5678-7000-8000-000000000101",
+    "_situation_id": "REQUIRED. UUID of the situation this annotation attaches to. Must exist in situations.json.",
+
+    "kind": "Comment",
+    "_kind": "REQUIRED. One of: Comment | Footnote | Citation. Comment = reviewer/author margin note (NOT rendered in compile). Footnote = rendered at chapter end. Citation = source attribution rendered as numeric ref + bibliography entry.",
+
+    "span": [0, 24],
+    "_span": "REQUIRED. Byte range [start, end] in the situation's concatenated prose (Text + Dialogue blocks joined with \"\\n\\n\"). Detached annotations keep their old span for reference.",
+
+    "body": "Strong opener — establishes Volkov's compromised position in 24 bytes. Consider tightening the second clause.",
+    "_body": "REQUIRED unless kind=Citation. Free-form annotation text. Skill output from /tensa-narrative-llm dramatic-irony, scene-sequel etc. lands in this field.",
+
+    "source_id": null,
+    "_source_id": "OPTIONAL. UUID of the cited source. Citations carry source_id + chunk_id so they survive into compile output (W13).",
+
+    "chunk_id": null,
+    "_chunk_id": "OPTIONAL. UUID of a specific chunk in chunks.json that backs this annotation.",
+
+    "author": "skill:tensa-narrative-llm",
+    "_author": "OPTIONAL. Authoring agent / human name. Skill writes use the form `skill:<skill-name>`.",
+
+    "detached": false,
+    "_detached": "OPTIONAL (default false). True when prose was edited such that this annotation's span no longer maps to valid text. The Studio UI surfaces detached annotations with a warning so the writer can re-anchor or delete them.",
+
+    "created_at": "2026-04-30T12:00:00Z",
+    "updated_at": "2026-04-30T12:00:00Z"
+  },
+  {
+    "_doc": "=== Citation example — kind=Citation, body may be empty, source_id REQUIRED ===",
+    "id": "01911234-5678-7000-8000-000000000302",
+    "situation_id": "01911234-5678-7000-8000-000000000102",
+    "kind": "Citation",
+    "span": [120, 145],
+    "body": "",
+    "source_id": "01911234-5678-7000-8000-000000000201",
+    "chunk_id": "01911234-5678-7000-8000-000000000401",
+    "author": null,
+    "detached": false,
+    "created_at": "2026-04-30T12:00:00Z",
+    "updated_at": "2026-04-30T12:00:00Z"
+  }
+]

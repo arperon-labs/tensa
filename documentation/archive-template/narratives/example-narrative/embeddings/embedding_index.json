@@ -1,0 +1,17 @@
+{
+  "_doc": "=== EMBEDDING INDEX: Maps UUIDs to byte offsets in .bin files ===",
+
+  "dimension": 384,
+  "_dimension": "Embedding vector dimension (e.g., 384 for MiniLM, 1536 for OpenAI ada-002).",
+
+  "entities": {
+    "01911234-5678-7000-8000-000000000001": {
+      "file": "entity_embeddings.bin",
+      "offset": 0
+    },
+    "_note": "Each entry maps a UUID to a file and byte offset. The embedding occupies dimension * 4 bytes (little-endian f32)."
+  },
+
+  "situations": {},
+  "chunks": {}
+}

@@ -1,12 +1,13 @@
 use std::sync::{Arc, RwLock};
 
-use axum::routing::{delete, get, post, put};
+use axum::routing::{delete, get, patch, post, put};
 use axum::Router;
 use serde::{Deserialize, Serialize};
 
 use crate::api::{
-    adaptation_routes, analysis, analytics_readback_routes, annotation_routes,
-    architecture_routes, argumentation_gradual, bulk_routes, chunk_routes, collection_routes,
+    adaptation_routes, analysis, analysis_status_routes, analytics_readback_routes,
+    annotation_routes, architecture_routes, argumentation_gradual, bulk_routes, chunk_routes,
+    collection_routes,
     compile_routes, continuity_routes, cost_ledger_routes, debug_routes, editing_routes, fuzzy,
     generation_routes, import_routes, inference, openai_compat, openapi, plan_routes,
     project_routes, research_routes, revision_routes, routes, settings_routes, source_routes,
@@ -802,6 +803,17 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         )
         // Cross-narrative tag analysis
         .route("/analysis/by-tag", post(routes::analyze_by_tag))
+        // Analysis-status registry (per-narrative job-completion tracking)
+        .route(
+            "/narratives/:id/analysis-status",
+            get(analysis_status_routes::list_status)
+                .post(analysis_status_routes::upsert_status),
+        )
+        .route(
+            "/narratives/:id/analysis-status/:job_type",
+            patch(analysis_status_routes::set_lock)
+                .delete(analysis_status_routes::delete_status),
+        )
         .route(
             "/analysis/shortest-path",
             post(routes::compute_shortest_path),

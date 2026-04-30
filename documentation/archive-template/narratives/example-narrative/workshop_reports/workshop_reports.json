@@ -1,0 +1,42 @@
+[
+  {
+    "_doc": "=== WORKSHOP REPORT: Three-tier critique of a narrative or narrative slice ===",
+
+    "id": "01911234-5678-7000-8000-000000000701",
+    "_id": "OPTIONAL. UUIDv7. Auto-generated if null.",
+
+    "narrative_id": "example-narrative",
+    "_narrative_id": "REQUIRED. Rewritten on import to match the imported narrative slug.",
+
+    "tier": "Senior",
+    "_tier": "REQUIRED. One of: Junior | Mid | Senior. Drives critique depth and LLM cost (Junior: cheap surface review; Senior: structural / thematic / craft).",
+
+    "request": {
+      "_doc": "Original WorkshopRequest that produced this report. Includes scope (full narrative vs. arc / scene / sequence) and focus areas.",
+      "scope": "full",
+      "focus_areas": ["pacing", "dialogue", "structure"]
+    },
+
+    "findings": [
+      {
+        "category": "pacing",
+        "severity": "medium",
+        "headline": "Scene 3 lingers — consider trimming the descriptive interlude.",
+        "detail": "The 350-word block between the phone call and Volkov's exit slows momentum without setup payoff.",
+        "situation_ref": "01911234-5678-7000-8000-000000000103"
+      }
+    ],
+    "_findings": "REQUIRED. Array of WorkshopFinding objects with category / severity / headline / detail / optional situation_ref.",
+
+    "summary": "Strong opening, mid-act sag in scene 3, satisfying climax. Three actionable fixes proposed.",
+    "_summary": "OPTIONAL. One-paragraph LLM-generated executive summary.",
+
+    "model": "claude-opus-4-7",
+    "_model": "OPTIONAL. Model identifier the report was produced with.",
+
+    "cost_ledger_entry_id": null,
+    "_cost_ledger_entry_id": "OPTIONAL. Reference to a CostLedgerEntry in cl/ for spend tracking.",
+
+    "created_at": "2026-04-30T12:00:00Z"
+  }
+]

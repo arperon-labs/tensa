@@ -748,6 +748,36 @@ impl<B: McpBackend + Clone + 'static> TensaMcp<B> {
     }
 
     #[tool(
+        name = "run_full_analysis",
+        description = "Headless equivalent of Studio's 'Run Full Analysis' button. Submits every algorithmic inference job for a narrative (PageRank, communities, topology, embeddings, contagion, etc.). Locked Skill/Manual analysis-status rows are skipped unless force=true. Returns submitted + skipped_locked arrays. Use this from a skill / agent flow to drive end-to-end analysis without opening Studio."
+    )]
+    async fn run_full_analysis(
+        &self,
+        Parameters(req): Parameters<RunFullAnalysisRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        wrap(
+            self.backend
+                .run_full_analysis(&req.narrative_id, req.tiers, req.force)
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "backfill_embeddings",
+        description = "Generate embeddings for entities and situations missing them. Optional narrative_id scopes to one narrative; otherwise sweeps Candidate-maturity rows globally. Set force=true to re-embed existing rows. Requires an embedding provider configured server-side. Returns counts of entities/situations embedded plus skipped count."
+    )]
+    async fn backfill_embeddings(
+        &self,
+        Parameters(req): Parameters<BackfillEmbeddingsRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        wrap(
+            self.backend
+                .backfill_embeddings(req.narrative_id.as_deref(), req.force)
+                .await,
+        )
+    }
+
+    #[tool(
         name = "ask",
         description = "Ask a natural language question about narrative data. Uses RAG (Retrieval-Augmented Generation) to find relevant context and generate an answer with citations. Optionally scope to a narrative and choose retrieval mode (local/global/hybrid/mix). Set response_type for custom formatting and suggest=true for follow-up questions."
     )]

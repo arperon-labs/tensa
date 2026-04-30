@@ -1,0 +1,58 @@
+{
+  "_doc": "Narrative metadata. REQUIRED. One per narrative directory.",
+
+  "id": "example-narrative",
+  "_id": "REQUIRED. Slug identifier. Must match the directory name. Lowercase, hyphens OK.",
+
+  "title": "The Example Narrative",
+  "_title": "REQUIRED. Human-readable display title.",
+
+  "genre": "investigation",
+  "_genre": "OPTIONAL. One of: novel, novella, short-story, investigation, geopolitical, intelligence-report, news-article, academic-paper, biography, memoir, essay, technical, legal, financial, social-media, transcript, other. Or any custom string.",
+
+  "tags": ["example", "template", "fiction"],
+  "_tags": "OPTIONAL. Free-form string tags for filtering and grouping.",
+
+  "source": {
+    "source_type": "book",
+    "source_id": "isbn:9780140449136",
+    "description": "Original source material",
+    "timestamp": "2026-04-06T12:00:00Z",
+    "registered_source": null
+  },
+  "_source": "OPTIONAL. Provenance of the narrative's source material. registered_source is a UUID linking to a Source record.",
+
+  "project_id": null,
+  "_project_id": "OPTIONAL. Parent project slug. If set, the project must exist in projects/{slug}.json.",
+
+  "description": "A sample narrative demonstrating all available fields in the archive format.",
+  "_description": "OPTIONAL. Longer description of the narrative.",
+
+  "authors": ["Jane Doe", "John Smith"],
+  "_authors": "OPTIONAL. Author(s) of the original source material.",
+
+  "language": "en",
+  "_language": "OPTIONAL. ISO 639-1 language code (en, ru, de, fr, es, etc.).",
+
+  "publication_date": "2025-01-15T00:00:00Z",
+  "_publication_date": "OPTIONAL. ISO 8601 date of original publication.",
+
+  "cover_url": null,
+  "_cover_url": "OPTIONAL. URL to a cover image.",
+
+  "custom_properties": {
+    "translator": "Example Translator",
+    "word_count": "85000"
+  },
+  "_custom_properties": "OPTIONAL. Arbitrary key-value string pairs for user-defined metadata.",
+
+  "entity_count": 3,
+  "_entity_count": "Informational cache. Importer recalculates from actual data.",
+
+  "situation_count": 3,
+  "_situation_count": "Informational cache. Importer recalculates from actual data.",
+
+  "created_at": "2026-04-06T12:00:00Z",
+  "updated_at": "2026-04-06T12:00:00Z",
+  "_timestamps": "OPTIONAL. Auto-filled on import if missing."
+}

@@ -1,0 +1,87 @@
+[
+  {
+    "_doc": "=== PARTICIPATION: Links an entity to a situation with role and context ===",
+
+    "entity_id": "01911234-5678-7000-8000-000000000001",
+    "_entity_id": "REQUIRED. UUID of the participating entity.",
+
+    "situation_id": "01911234-5678-7000-8000-000000000101",
+    "_situation_id": "REQUIRED. UUID of the situation the entity participates in.",
+
+    "role": "Protagonist",
+    "_role": "OPTIONAL (default: Protagonist). One of: Protagonist, Antagonist, Witness, Target, Instrument, Confidant, Informant, Recipient, Bystander, SubjectOfDiscussion, or any custom string via Custom(\"role-name\").",
+
+    "info_set": {
+      "knows_before": [
+        {
+          "about_entity": "01911234-5678-7000-8000-000000000003",
+          "fact": "Meridian Trading is a front company",
+          "confidence": 0.9
+        }
+      ],
+      "_knows_before": "What the entity knows BEFORE this situation begins. Array of {about_entity: UUID, fact: string, confidence: float}.",
+
+      "learns": [
+        {
+          "about_entity": "01911234-5678-7000-8000-000000000003",
+          "fact": "Meridian's financial records show money laundering",
+          "confidence": 0.85
+        }
+      ],
+      "_learns": "What the entity LEARNS during this situation.",
+
+      "reveals": [],
+      "_reveals": "What the entity REVEALS to others during this situation.",
+
+      "beliefs_about_others": [
+        {
+          "about_entity": "01911234-5678-7000-8000-000000000003",
+          "believed_knowledge": [
+            {
+              "about_entity": "01911234-5678-7000-8000-000000000001",
+              "fact": "Volkov is investigating them",
+              "confidence": 0.3
+            }
+          ],
+          "confidence": 0.5,
+          "last_updated_at": "01911234-5678-7000-8000-000000000101"
+        }
+      ],
+      "_beliefs_about_others": "OPTIONAL. Recursive beliefs: 'A thinks B knows X'. Depth-2 epistemic reasoning. last_updated_at is the situation UUID where this belief was last revised."
+    },
+    "_info_set": "OPTIONAL. Epistemic state — what the entity knows, learns, reveals, and believes others know. The foundation for information-asymmetry analysis.",
+
+    "action": "exchanges documents with contact",
+    "_action": "OPTIONAL. Short description of what the entity does in this situation.",
+
+    "payoff": {"intel_value": 0.8, "personal_risk": 0.6},
+    "_payoff": "OPTIONAL. Game-theoretic payoff — arbitrary JSON representing the entity's outcome.",
+
+    "seq": 0,
+    "_seq": "OPTIONAL (default: 0). Sequence number for multi-role participation. An entity can have multiple roles in the same situation (e.g., both Protagonist and Informant) — each role gets a different seq."
+  },
+
+  {
+    "_doc": "=== PARTICIPATION: Minimal example ===",
+    "entity_id": "01911234-5678-7000-8000-000000000001",
+    "situation_id": "01911234-5678-7000-8000-000000000102",
+    "role": "Protagonist",
+    "action": "analyzes documents"
+  },
+
+  {
+    "_doc": "=== PARTICIPATION: Organization as subject of discussion ===",
+    "entity_id": "01911234-5678-7000-8000-000000000003",
+    "situation_id": "01911234-5678-7000-8000-000000000103",
+    "role": "SubjectOfDiscussion",
+    "_role_note": "SubjectOfDiscussion means the entity is talked about but not physically present."
+  },
+
+  {
+    "_doc": "=== PARTICIPATION: Location as setting ===",
+    "entity_id": "01911234-5678-7000-8000-000000000002",
+    "situation_id": "01911234-5678-7000-8000-000000000101",
+    "role": "Instrument",
+    "_role_note": "Locations typically participate as Instrument (setting/backdrop) or Target."
+  }
+]

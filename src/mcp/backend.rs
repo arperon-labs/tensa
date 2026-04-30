@@ -249,6 +249,28 @@ pub trait McpBackend: Send + Sync {
     /// Get LLM response cache statistics (entries and total bytes).
     fn cache_stats(&self) -> impl std::future::Future<Output = Result<Value>> + Send;
 
+    /// Run the per-narrative bulk-analysis tier suite (the headless equivalent
+    /// of Studio's "Run Full Analysis" button). Submits every algorithmic
+    /// inference job in the requested tiers, skipping any rows whose
+    /// analysis-status entry is `locked: true` unless `force = true`.
+    /// Returns `{ submitted, skipped_locked, entities, situations, actors }`.
+    fn run_full_analysis(
+        &self,
+        narrative_id: &str,
+        tiers: Option<Vec<String>>,
+        force: bool,
+    ) -> impl std::future::Future<Output = Result<Value>> + Send;
+
+    /// Generate embeddings for entities + situations missing them. Optional
+    /// `narrative_id` scopes to one narrative (otherwise sweeps all `Candidate`
+    /// rows). `force = true` re-embeds rows that already have an embedding.
+    /// Requires an embedding provider to be configured server-side.
+    fn backfill_embeddings(
+        &self,
+        narrative_id: Option<&str>,
+        force: bool,
+    ) -> impl std::future::Future<Output = Result<Value>> + Send;
+
     /// Ask a natural language question with RAG (Retrieval-Augmented Generation).
     fn ask(
         &self,

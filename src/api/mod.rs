@@ -3,6 +3,8 @@ pub mod adaptation_routes;
 #[cfg(feature = "server")]
 pub mod analysis;
 #[cfg(feature = "server")]
+pub mod analysis_status_routes;
+#[cfg(feature = "server")]
 pub mod analytics_readback_routes;
 #[cfg(feature = "server")]
 pub mod annotation_routes;

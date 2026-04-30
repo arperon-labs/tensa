@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use serde_json;
+use tracing;
 use uuid::Uuid;
 
 use crate::error::{Result, TensaError};
@@ -78,11 +79,55 @@ impl JobQueue {
     }
 
     /// Store an inference result.
+    ///
+    /// As a side effect, writes a best-effort `Source::Auto` row into the
+    /// analysis-status registry when the job carries a `narrative_id` in its
+    /// `parameters` (set by all bulk-analysis dispatchers — see
+    /// `routes::analyze_by_tag`). The registry write is best-effort: failures
+    /// are logged but do NOT abort result storage. Locked Skill / Manual rows
+    /// take precedence over Auto entries and are never overwritten here.
     pub fn store_result(&self, result: InferenceResult) -> Result<()> {
         let key = result_key(&result.job_id);
         let data = serde_json::to_vec(&result)?;
         self.store.put(&key, &data)?;
+        self.write_auto_status(&result);
         Ok(())
+    }
+
+    fn write_auto_status(&self, result: &InferenceResult) {
+        // Job and narrative_id are required to key the row; quietly skip otherwise.
+        let Ok(job) = self.get_job(&result.job_id) else { return };
+        let Some(narrative_id) = job
+            .parameters
+            .get("narrative_id")
+            .and_then(|v| v.as_str())
+        else { return };
+
+        let scope = job
+            .parameters
+            .get("scope")
+            .and_then(|v| v.as_str())
+            .unwrap_or("story");
+        let status_store =
+            crate::analysis_status::AnalysisStatusStore::new(Arc::clone(&self.store));
+        if let Ok(Some(existing)) = status_store.get(narrative_id, &result.job_type, scope) {
+            if existing.locked {
+                return;
+            }
+        }
+        if let Err(e) = crate::analysis_status::mark_done_from_result(
+            &status_store,
+            narrative_id,
+            scope,
+            result,
+        ) {
+            tracing::warn!(
+                target: "tensa::analysis_status",
+                error = %e,
+                narrative_id,
+                "failed to write Auto analysis-status row"
+            );
+        }
     }
 
     /// List pending jobs, ordered by priority then creation time.

@@ -1,0 +1,20 @@
+[
+  {
+    "_doc": "=== TAXONOMY ENTRY: Custom classification values (only non-builtin entries) ===",
+
+    "category": "genre",
+    "_category": "Which taxonomy category. Built-in categories: 'genre', 'content_type'. Can also be any custom category string.",
+
+    "value": "intelligence-report",
+    "_value": "REQUIRED. Slug value. Must not shadow a builtin value.",
+
+    "label": "Intelligence Report",
+    "_label": "REQUIRED. Human-readable display label.",
+
+    "description": "Classified or declassified intelligence analysis product",
+    "_description": "OPTIONAL. Explanation of what this category value means.",
+
+    "is_builtin": false,
+    "_is_builtin": "Always false in archives. Builtin entries are defined in Tensa's code and cannot be imported."
+  }
+]

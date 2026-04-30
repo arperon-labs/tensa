@@ -1,0 +1,18 @@
+[
+  {
+    "_doc": "=== STATE VERSION: Snapshot of entity properties at a specific situation ===",
+
+    "entity_id": "01911234-5678-7000-8000-000000000001",
+    "situation_id": "01911234-5678-7000-8000-000000000101",
+    "properties": {
+      "name": "Alexei Volkov",
+      "status": "active operative",
+      "suspicion_level": "low"
+    },
+    "_properties": "Entity properties as they were AT this situation.",
+    "beliefs": {"risk_assessment": "acceptable"},
+    "_beliefs": "Entity beliefs as they were AT this situation.",
+    "embedding": null,
+    "timestamp": "2025-03-15T22:30:00Z"
+  }
+]

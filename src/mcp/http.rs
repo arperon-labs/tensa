@@ -628,6 +628,32 @@ impl McpBackend for HttpBackend {
         self.get_json("/cache/stats").await
     }
 
+    async fn run_full_analysis(
+        &self,
+        narrative_id: &str,
+        tiers: Option<Vec<String>>,
+        force: bool,
+    ) -> Result<Value> {
+        let mut body = serde_json::json!({"force": force});
+        if let Some(t) = tiers {
+            body["tiers"] = serde_json::json!(t);
+        }
+        self.post_json(&format!("/narratives/{}/analyze", narrative_id), &body)
+            .await
+    }
+
+    async fn backfill_embeddings(
+        &self,
+        narrative_id: Option<&str>,
+        force: bool,
+    ) -> Result<Value> {
+        let mut body = serde_json::json!({"force": force});
+        if let Some(nid) = narrative_id {
+            body["narrative_id"] = serde_json::Value::String(nid.to_string());
+        }
+        self.post_json("/embeddings/backfill", &body).await
+    }
+
     async fn ask(
         &self,
         question: &str,

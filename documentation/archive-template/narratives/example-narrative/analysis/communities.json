@@ -1,0 +1,23 @@
+[
+  {
+    "_doc": "=== COMMUNITY SUMMARY: LLM-generated summary of a detected community cluster ===",
+
+    "narrative_id": "example-narrative",
+    "community_id": 0,
+    "summary": "A cluster centered on Volkov's intelligence-gathering activities, including his contacts and the harbor meeting.",
+    "entity_ids": [
+      "01911234-5678-7000-8000-000000000001",
+      "01911234-5678-7000-8000-000000000002"
+    ],
+    "entity_names": ["Alexei Volkov", "Harbor District"],
+    "key_themes": ["espionage", "document exchange", "harbor operations"],
+    "entity_count": 2,
+    "generated_at": "2026-04-06T12:00:00Z",
+    "model": "claude-sonnet-4-20250514",
+    "_model": "OPTIONAL. Which LLM generated this summary.",
+    "level": 0,
+    "_level": "Hierarchy depth. 0 = leaf (most granular), higher = coarser.",
+    "parent_community_id": null,
+    "child_community_ids": []
+  }
+]

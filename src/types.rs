@@ -802,6 +802,15 @@ pub enum InferenceJobType {
     SceneSequel,
     /// Suggest sjužet reorderings for dramatic effect.
     SjuzetReordering,
+    /// Community summarization (LLM-driven naming + theming of detected
+    /// communities). The actual generation runs via the
+    /// `/narratives/:id/communities/summarize` endpoint, but the registry
+    /// row records that the analysis was attested.
+    CommunitySummary,
+    /// Structural narrative-linter pass (orphans, knowledge gaps, pacing,
+    /// commitment failures, etc.). Runs via the `diagnose_narrative` MCP
+    /// tool / `/narratives/:id/diagnose` endpoint.
+    NarrativeDiagnose,
     // Sprint D12: Adversarial narrative wargaming
     /// Generate adversary policy from IRL reward weights + SUQR rationality.
     AdversaryPolicy,
@@ -991,6 +1000,131 @@ pub enum InferenceJobType {
         narrative_id: String,
         config: serde_json::Value,
     },
+}
+
+impl InferenceJobType {
+    /// Stable variant name (e.g. `"ArcClassification"`, `"SurrogateCalibration"`)
+    /// regardless of whether the variant carries a payload. Used as a KV-key
+    /// segment by the analysis-status registry so that re-running a payload
+    /// variant for the same narrative writes to the same row.
+    pub fn variant_name(&self) -> &'static str {
+        // serde-derived JSON gives `"Foo"` for unit variants and `{"Foo": ...}` for
+        // payload-carrying ones. We normalize to the variant name in both cases.
+        // Deriving a static slice via `serde_json` would be a fresh allocation, so
+        // we use a hand-rolled discriminant table — keep alphabetized for diffing.
+        use InferenceJobType::*;
+        match self {
+            MotivationInference => "MotivationInference",
+            CausalDiscovery => "CausalDiscovery",
+            Counterfactual => "Counterfactual",
+            GameClassification => "GameClassification",
+            MissingLinks => "MissingLinks",
+            AnomalyDetection => "AnomalyDetection",
+            PatternMining => "PatternMining",
+            ArcClassification => "ArcClassification",
+            ActorArcClassification => "ActorArcClassification",
+            MissingEventPrediction => "MissingEventPrediction",
+            CentralityAnalysis => "CentralityAnalysis",
+            EntropyAnalysis => "EntropyAnalysis",
+            BeliefModeling => "BeliefModeling",
+            EvidenceCombination => "EvidenceCombination",
+            ArgumentationAnalysis => "ArgumentationAnalysis",
+            ContagionAnalysis => "ContagionAnalysis",
+            StyleProfile => "StyleProfile",
+            StyleComparison => "StyleComparison",
+            StyleAnomaly => "StyleAnomaly",
+            AuthorshipVerification => "AuthorshipVerification",
+            TCGAnomaly => "TCGAnomaly",
+            NextEvent => "NextEvent",
+            TemporalILP => "TemporalILP",
+            MeanFieldGame => "MeanFieldGame",
+            ProbabilisticSoftLogic => "ProbabilisticSoftLogic",
+            TrajectoryEmbedding => "TrajectoryEmbedding",
+            NarrativeSimulation => "NarrativeSimulation",
+            PageRank => "PageRank",
+            EigenvectorCentrality => "EigenvectorCentrality",
+            HarmonicCentrality => "HarmonicCentrality",
+            HITS => "HITS",
+            Topology => "Topology",
+            LabelPropagation => "LabelPropagation",
+            KCore => "KCore",
+            TemporalPageRank => "TemporalPageRank",
+            CausalInfluence => "CausalInfluence",
+            InfoBottleneck => "InfoBottleneck",
+            Assortativity => "Assortativity",
+            TemporalMotifs => "TemporalMotifs",
+            FactionEvolution => "FactionEvolution",
+            FastRP => "FastRP",
+            Node2Vec => "Node2Vec",
+            NetworkInference => "NetworkInference",
+            BehavioralFingerprint => "BehavioralFingerprint",
+            DisinfoFingerprint => "DisinfoFingerprint",
+            SpreadVelocity => "SpreadVelocity",
+            SpreadIntervention => "SpreadIntervention",
+            CibDetection => "CibDetection",
+            Superspreaders => "Superspreaders",
+            ClaimOrigin => "ClaimOrigin",
+            ClaimMatch => "ClaimMatch",
+            ArchetypeClassification => "ArchetypeClassification",
+            DisinfoAssessment => "DisinfoAssessment",
+            CommitmentDetection => "CommitmentDetection",
+            FabulaExtraction => "FabulaExtraction",
+            SjuzetExtraction => "SjuzetExtraction",
+            DramaticIrony => "DramaticIrony",
+            Focalization => "Focalization",
+            CharacterArc => "CharacterArc",
+            SubplotDetection => "SubplotDetection",
+            SceneSequel => "SceneSequel",
+            SjuzetReordering => "SjuzetReordering",
+            CommunitySummary => "CommunitySummary",
+            NarrativeDiagnose => "NarrativeDiagnose",
+            AdversaryPolicy => "AdversaryPolicy",
+            CognitiveHierarchy => "CognitiveHierarchy",
+            WargameSimulation => "WargameSimulation",
+            RewardFingerprint => "RewardFingerprint",
+            CounterNarrative => "CounterNarrative",
+            Retrodiction => "Retrodiction",
+            ChapterGenerationFitness => "ChapterGenerationFitness",
+            SurrogateCalibration { .. } => "SurrogateCalibration",
+            SurrogateGeneration { .. } => "SurrogateGeneration",
+            SurrogateSignificance { .. } => "SurrogateSignificance",
+            SurrogateContagionSignificance { .. } => "SurrogateContagionSignificance",
+            SurrogateHybridGeneration { .. } => "SurrogateHybridGeneration",
+            SurrogateDualSignificance { .. } => "SurrogateDualSignificance",
+            SurrogateBistabilitySignificance { .. } => "SurrogateBistabilitySignificance",
+            SurrogateOpinionSignificance { .. } => "SurrogateOpinionSignificance",
+            HypergraphReconstruction { .. } => "HypergraphReconstruction",
+            FuzzyAggregate { .. } => "FuzzyAggregate",
+            FuzzyAllenGradation { .. } => "FuzzyAllenGradation",
+            FuzzyQuantifierEvaluate { .. } => "FuzzyQuantifierEvaluate",
+            FuzzySyllogismVerify { .. } => "FuzzySyllogismVerify",
+            FuzzyFcaLattice { .. } => "FuzzyFcaLattice",
+            FuzzyRuleEvaluate { .. } => "FuzzyRuleEvaluate",
+            FuzzyHybridInference { .. } => "FuzzyHybridInference",
+        }
+    }
+}
+
+impl std::fmt::Display for InferenceJobType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.variant_name())
+    }
+}
+
+impl std::str::FromStr for InferenceJobType {
+    type Err = crate::error::TensaError;
+
+    /// Parse a path-segment / variant name back into an `InferenceJobType`.
+    /// Only unit variants are constructible this way — payload-carrying
+    /// variants need their data and must be constructed directly.
+    fn from_str(s: &str) -> crate::error::Result<Self> {
+        serde_json::from_value(serde_json::Value::String(s.to_string())).map_err(|e| {
+            crate::error::TensaError::InvalidInput(format!(
+                "unknown InferenceJobType '{}': {} (payload variants cannot be parsed from a name alone)",
+                s, e
+            ))
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

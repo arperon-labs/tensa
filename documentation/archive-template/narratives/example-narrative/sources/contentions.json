@@ -1,0 +1,18 @@
+[
+  {
+    "_doc": "=== CONTENTION: Two situations that make conflicting claims ===",
+
+    "situation_a": "01911234-5678-7000-8000-000000000101",
+    "situation_b": "01911234-5678-7000-8000-000000000102",
+
+    "contention_type": "TemporalDisagreement",
+    "_contention_type": "REQUIRED. One of: DirectContradiction (A says X, B says not-X), NumericalDisagreement (different numbers), TemporalDisagreement (different timelines), AttributionDisagreement (different attribution), OmissionBias (one source omits key info).",
+
+    "description": "Source A places the meeting at 22:30, Source B claims 23:00",
+    "resolved": false,
+    "_resolved": "Whether this contention has been adjudicated.",
+    "resolution": null,
+    "_resolution": "OPTIONAL. Analyst notes on how the contention was resolved.",
+    "created_at": "2026-04-06T12:00:00Z"
+  }
+]

@@ -1,0 +1,12 @@
+{
+  "_doc": "=== TUNED PROMPT: Domain-adapted extraction guidelines for LLM ingestion ===",
+
+  "narrative_id": "example-narrative",
+  "prompt_text": "When extracting from this intelligence narrative, pay special attention to: temporal precision of meetings, participant roles (handler/asset/courier), information asymmetries between parties, and chain-of-custody for documents.",
+  "_prompt_text": "The domain-specific extraction guidelines appended to the system prompt during ingestion.",
+  "domain_description": "Intelligence investigation with document exchanges and surveillance",
+  "entity_types": ["Actor", "Location", "Organization", "Artifact"],
+  "_entity_types": "Entity types the tuner identified as relevant to this domain.",
+  "generated_at": "2026-04-06T12:00:00Z",
+  "model": "claude-sonnet-4-20250514"
+}

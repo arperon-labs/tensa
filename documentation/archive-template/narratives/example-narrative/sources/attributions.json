@@ -1,0 +1,29 @@
+[
+  {
+    "_doc": "=== SOURCE ATTRIBUTION: Links a source to an entity or situation claim ===",
+
+    "source_id": "01911234-5678-7000-8000-000000000201",
+    "_source_id": "REQUIRED. UUID of the Source record.",
+
+    "target_id": "01911234-5678-7000-8000-000000000101",
+    "_target_id": "REQUIRED. UUID of the Entity or Situation this source supports.",
+
+    "target_kind": "Situation",
+    "_target_kind": "REQUIRED. One of: Entity, Situation.",
+
+    "retrieved_at": "2025-03-16T09:00:00Z",
+    "_retrieved_at": "REQUIRED. When this claim was retrieved from the source.",
+
+    "original_url": null,
+    "_original_url": "OPTIONAL. URL of the specific article/page/endpoint.",
+
+    "excerpt": "Access log shows entry at Gate 7 at 22:28, exit at 23:17",
+    "_excerpt": "OPTIONAL. Relevant excerpt from the source material.",
+
+    "extraction_confidence": 0.92,
+    "_extraction_confidence": "REQUIRED. Float 0.0-1.0. How well the extraction process parsed this source.",
+
+    "claim": null,
+    "_claim": "OPTIONAL. Which hypothesis this source supports. When set, Dempster-Shafer mass is concentrated on this claim rather than distributed uniformly."
+  }
+]

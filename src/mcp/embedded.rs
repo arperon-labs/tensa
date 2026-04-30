@@ -613,6 +613,218 @@ impl McpBackend for EmbeddedBackend {
         serde_json::to_value(stats).map_err(|e| TensaError::Serialization(e.to_string()))
     }
 
+    async fn run_full_analysis(
+        &self,
+        narrative_id: &str,
+        _tiers: Option<Vec<String>>,
+        force: bool,
+    ) -> Result<Value> {
+        // Embedded backend ships a flat curated set of algorithmic jobs (the
+        // common foundational + structural + temporal slice). Callers wanting
+        // Studio's full 5-tier dispatch with priorities should use the HTTP
+        // backend, which delegates to /narratives/:id/analyze. The `_tiers`
+        // arg is accepted for API symmetry but ignored here.
+        let entities = self.inner.hypergraph.list_entities_by_narrative(narrative_id)?;
+        let situations = self
+            .inner
+            .hypergraph
+            .list_situations_by_narrative(narrative_id)?;
+        if entities.is_empty() && situations.is_empty() {
+            return Err(TensaError::InvalidInput(format!(
+                "Narrative '{}' has no entities or situations",
+                narrative_id
+            )));
+        }
+        let first_entity_id = entities.first().map(|e| e.id).unwrap_or_default();
+        let first_situation_id = situations.first().map(|s| s.id).unwrap_or_default();
+
+        let status_store =
+            crate::analysis_status::AnalysisStatusStore::new(self.store_arc());
+        let curated: &[(InferenceJobType, JobPriority, Uuid)] = &[
+            (InferenceJobType::CentralityAnalysis, JobPriority::High, first_entity_id),
+            (InferenceJobType::EntropyAnalysis, JobPriority::High, first_situation_id),
+            (InferenceJobType::AnomalyDetection, JobPriority::High, first_situation_id),
+            (InferenceJobType::PageRank, JobPriority::Normal, first_entity_id),
+            (InferenceJobType::EigenvectorCentrality, JobPriority::Normal, first_entity_id),
+            (InferenceJobType::HarmonicCentrality, JobPriority::Normal, first_entity_id),
+            (InferenceJobType::HITS, JobPriority::Normal, first_entity_id),
+            (InferenceJobType::Topology, JobPriority::Normal, first_entity_id),
+            (InferenceJobType::KCore, JobPriority::Normal, first_entity_id),
+            (InferenceJobType::LabelPropagation, JobPriority::Normal, first_entity_id),
+            (InferenceJobType::TemporalPageRank, JobPriority::Normal, first_entity_id),
+            (InferenceJobType::CausalInfluence, JobPriority::Normal, first_entity_id),
+            (InferenceJobType::Assortativity, JobPriority::Normal, first_entity_id),
+            (InferenceJobType::TemporalMotifs, JobPriority::Normal, first_situation_id),
+            (InferenceJobType::FactionEvolution, JobPriority::Normal, first_entity_id),
+            (InferenceJobType::FastRP, JobPriority::Low, first_entity_id),
+            (InferenceJobType::Node2Vec, JobPriority::Low, first_entity_id),
+            (InferenceJobType::ContagionAnalysis, JobPriority::Low, first_situation_id),
+        ];
+
+        let params = serde_json::json!({"narrative_id": narrative_id, "scope": "story"});
+        let mut submitted = Vec::new();
+        let mut skipped = Vec::new();
+        for (jt, prio, target) in curated.iter().cloned() {
+            if !force {
+                if let Ok(Some(existing)) = status_store.get(narrative_id, &jt, "story") {
+                    if existing.locked {
+                        skipped.push(serde_json::json!({
+                            "job_type": jt.variant_name(),
+                            "reason": "locked",
+                            "existing": existing,
+                        }));
+                        continue;
+                    }
+                }
+            }
+            let job = InferenceJob {
+                id: Uuid::now_v7().to_string(),
+                job_type: jt.clone(),
+                target_id: target,
+                parameters: params.clone(),
+                priority: prio,
+                status: JobStatus::Pending,
+                estimated_cost_ms: 0,
+                created_at: chrono::Utc::now(),
+                started_at: None,
+                completed_at: None,
+                error: None,
+            };
+            let job_id = job.id.clone();
+            if self.inner.job_queue.submit(job).is_ok() {
+                submitted.push(serde_json::json!({
+                    "job_id": job_id,
+                    "job_type": jt.variant_name(),
+                }));
+            }
+        }
+
+        Ok(serde_json::json!({
+            "narrative_id": narrative_id,
+            "submitted": submitted.len(),
+            "jobs": submitted,
+            "skipped_locked": skipped,
+            "force": force,
+            "entities": entities.len(),
+            "situations": situations.len(),
+        }))
+    }
+
+    async fn backfill_embeddings(
+        &self,
+        narrative_id: Option<&str>,
+        force: bool,
+    ) -> Result<Value> {
+        let embedder = self
+            .inner
+            .embedder
+            .as_ref()
+            .ok_or_else(|| {
+                TensaError::InvalidInput("No embedding provider configured".into())
+            })?
+            .clone();
+
+        let entities = match narrative_id {
+            Some(nid) => self.inner.hypergraph.list_entities_by_narrative(nid)?,
+            None => self
+                .inner
+                .hypergraph
+                .list_entities_by_maturity(crate::types::MaturityLevel::Candidate)?,
+        };
+        let situations = match narrative_id {
+            Some(nid) => self.inner.hypergraph.list_situations_by_narrative(nid)?,
+            None => self
+                .inner
+                .hypergraph
+                .list_situations_by_maturity(crate::types::MaturityLevel::Candidate)?,
+        };
+
+        let mut skipped: usize = 0;
+        let mut ent_ids = Vec::new();
+        let mut ent_texts = Vec::new();
+        for e in &entities {
+            if !force && e.embedding.is_some() {
+                skipped += 1;
+                continue;
+            }
+            let text = e
+                .properties
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or_else(|| e.entity_type.as_index_str())
+                .to_string();
+            ent_ids.push(e.id);
+            ent_texts.push(text);
+        }
+        let mut sit_ids = Vec::new();
+        let mut sit_texts = Vec::new();
+        for s in &situations {
+            if !force && s.embedding.is_some() {
+                skipped += 1;
+                continue;
+            }
+            let text = s
+                .description
+                .as_deref()
+                .or_else(|| s.raw_content.first().map(|c| c.content.as_str()))
+                .or_else(|| s.name.as_deref())
+                .unwrap_or("unnamed")
+                .to_string();
+            sit_ids.push(s.id);
+            sit_texts.push(text);
+        }
+
+        let ent_refs: Vec<&str> = ent_texts.iter().map(|s| s.as_str()).collect();
+        let ent_embeddings = embedder.embed_batch(&ent_refs)?;
+        let sit_refs: Vec<&str> = sit_texts.iter().map(|s| s.as_str()).collect();
+        let sit_embeddings = embedder.embed_batch(&sit_refs)?;
+
+        let mut entities_embedded: usize = 0;
+        for (id, emb) in ent_ids.iter().zip(ent_embeddings.iter()) {
+            if self
+                .inner
+                .hypergraph
+                .update_entity_no_snapshot(id, |e| {
+                    e.embedding = Some(emb.clone());
+                })
+                .is_ok()
+            {
+                entities_embedded += 1;
+            }
+        }
+        let mut situations_embedded: usize = 0;
+        for (id, emb) in sit_ids.iter().zip(sit_embeddings.iter()) {
+            if self
+                .inner
+                .hypergraph
+                .update_situation(id, |s| {
+                    s.embedding = Some(emb.clone());
+                })
+                .is_ok()
+            {
+                situations_embedded += 1;
+            }
+        }
+        if let Some(vi) = &self.inner.vector_index {
+            if let Ok(mut idx) = vi.write() {
+                for (id, emb) in ent_ids.iter().zip(ent_embeddings.iter()) {
+                    let _ = idx.add(*id, emb);
+                }
+                for (id, emb) in sit_ids.iter().zip(sit_embeddings.iter()) {
+                    let _ = idx.add(*id, emb);
+                }
+                let _ = idx.save(self.inner.hypergraph.store());
+            }
+        }
+
+        Ok(serde_json::json!({
+            "entities_embedded": entities_embedded,
+            "situations_embedded": situations_embedded,
+            "total_updated": entities_embedded + situations_embedded,
+            "skipped": skipped,
+        }))
+    }
+
     async fn ask(
         &self,
         question: &str,

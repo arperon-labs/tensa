@@ -1,6 +1,6 @@
 [package]
 name = "tensa"
-version = "0.79.2"
+version = "0.79.6"
 edition = "2021"
 description = "Narrative Tensor: multi-fidelity temporal hypergraph engine for multi-actor event systems"
 license = "MIT"

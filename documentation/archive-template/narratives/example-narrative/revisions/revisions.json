@@ -1,0 +1,38 @@
+[
+  {
+    "_doc": "=== NARRATIVE REVISION: Git-like snapshot of the narrative at a point in time ===",
+
+    "id": "01911234-5678-7000-8000-000000000601",
+    "_id": "OPTIONAL. UUIDv7. Auto-generated if null. Time-ordered for chronological listing.",
+
+    "narrative_id": "example-narrative",
+    "_narrative_id": "REQUIRED. Rewritten on import to match the imported narrative slug.",
+
+    "parent_id": null,
+    "_parent_id": "OPTIONAL. UUID of the previous revision in the chain. NULL = root revision.",
+
+    "author": "skill:tensa-narrative-llm",
+    "_author": "REQUIRED. Authoring agent / human name. Skill writes use `skill:<skill-name>`.",
+
+    "message": "Auto-repair pass: fixed pacing in scene 3, tightened dialogue voice for Volkov.",
+    "_message": "REQUIRED. Commit-message-style description of what changed in this revision.",
+
+    "snapshot": {
+      "_doc": "Full NarrativeSnapshot — includes situations, participations, and a content_hash. Omitted here for brevity. See src/types.rs::NarrativeSnapshot.",
+      "narrative_id": "example-narrative",
+      "situations": [],
+      "participations": [],
+      "content_hash": "blake3:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "_snapshot": "REQUIRED. NarrativeSnapshot object embedding the full state. Re-imported revisions retain their snapshots verbatim — restoring an old revision may reference remapped entity/situation IDs after a non-merge import (the importer emits a one-line warning when this happens).",
+
+    "counts": {
+      "situations": 12,
+      "participations": 24,
+      "content_bytes": 8472
+    },
+    "_counts": "OPTIONAL. RevisionCounts summary surfaced in /list_narrative_revisions for the writer UI.",
+
+    "created_at": "2026-04-30T12:00:00Z"
+  }
+]

@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use tracing;
+
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -3508,8 +3510,42 @@ pub async fn analyze_by_tag(
         }
     };
 
+    let force = body
+        .get("force")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let scope = body
+        .get("scope")
+        .and_then(|v| v.as_str())
+        .unwrap_or("story")
+        .to_string();
+    let status_store = crate::analysis_status::AnalysisStatusStore::new(
+        state.hypergraph.store_arc(),
+    );
+
     let mut submitted = Vec::new();
+    let mut skipped = Vec::new();
     for narrative in &narratives {
+        // One KV read tells us both whether to skip AND the row to surface.
+        if !force {
+            match status_store.get(&narrative.id, &job_type, &scope) {
+                Ok(Some(existing)) if existing.locked => {
+                    skipped.push(serde_json::json!({
+                        "narrative_id": &narrative.id,
+                        "reason": "locked",
+                        "existing": existing,
+                    }));
+                    continue;
+                }
+                Ok(_) => {}
+                Err(e) => tracing::warn!(
+                    target: "tensa::analysis_status",
+                    error = %e,
+                    "status lookup failed"
+                ),
+            }
+        }
+
         let first_entity = state
             .hypergraph
             .list_entities_by_narrative(&narrative.id)
@@ -3521,7 +3557,11 @@ pub async fn analyze_by_tag(
             id: uuid::Uuid::now_v7().to_string(),
             job_type: job_type.clone(),
             target_id,
-            parameters: serde_json::json!({"narrative_id": &narrative.id, "tag": &tag}),
+            parameters: serde_json::json!({
+                "narrative_id": &narrative.id,
+                "tag": &tag,
+                "scope": &scope,
+            }),
             priority: JobPriority::Normal,
             status: JobStatus::Pending,
             estimated_cost_ms: 0,
@@ -3542,8 +3582,11 @@ pub async fn analyze_by_tag(
     json_ok(&serde_json::json!({
         "tag": tag,
         "job_type": job_type_str,
+        "scope": scope,
+        "force": force,
         "narratives_matched": narratives.len(),
         "jobs_submitted": submitted,
+        "skipped_locked": skipped,
     }))
 }
 
@@ -3799,7 +3842,7 @@ pub async fn analyze_narrative(
         }
     };
 
-    // Parse optional tier selection from body (default: all tiers)
+    // Parse optional tier selection + force flag from body (default: all tiers, force off)
     let all_tiers = vec![
         "foundational",
         "structural",
@@ -3807,15 +3850,20 @@ pub async fn analyze_narrative(
         "temporal",
         "advanced",
     ];
-    let selected_tiers: Vec<String> = body
-        .and_then(|Json(v)| {
-            v.get("tiers").and_then(|t| t.as_array()).map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect()
-            })
+    let body_value = body.map(|Json(v)| v).unwrap_or_else(|| serde_json::json!({}));
+    let selected_tiers: Vec<String> = body_value
+        .get("tiers")
+        .and_then(|t| t.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect::<Vec<_>>()
         })
         .unwrap_or_else(|| all_tiers.iter().map(|s| s.to_string()).collect());
+    let force = body_value
+        .get("force")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     let tier = |name: &str| selected_tiers.iter().any(|t| t == name);
 
@@ -3846,12 +3894,32 @@ pub async fn analyze_narrative(
     let narrative_params = serde_json::json!({ "narrative_id": narrative_id });
 
     let mut submitted = Vec::new();
+    let mut skipped: Vec<serde_json::Value> = Vec::new();
+    let status_store = crate::analysis_status::AnalysisStatusStore::new(
+        state.hypergraph.store_arc(),
+    );
 
-    // Helper to submit a job and record it
+    // Helper to submit a job and record it. Skips locked Skill/Manual entries
+    // unless `force` was passed.
+    let narrative_id_for_check = narrative_id.clone();
     let mut submit = |job_type: InferenceJobType,
                       target_id: uuid::Uuid,
                       priority: JobPriority,
                       params: serde_json::Value| {
+        if !force {
+            if let Ok(Some(existing)) =
+                status_store.get(&narrative_id_for_check, &job_type, "story")
+            {
+                if existing.locked {
+                    skipped.push(serde_json::json!({
+                        "job_type": job_type.variant_name(),
+                        "reason": "locked",
+                        "existing": existing,
+                    }));
+                    return;
+                }
+            }
+        }
         let job = crate::inference::types::InferenceJob {
             id: uuid::Uuid::now_v7().to_string(),
             job_type,
@@ -4052,6 +4120,8 @@ pub async fn analyze_narrative(
         "situations": situations.len(),
         "actors": actors.len(),
         "jobs": submitted,
+        "skipped_locked": skipped,
+        "force": force,
     }))
     .into_response()
 }
@@ -4230,13 +4300,53 @@ pub struct ExportParams {
     /// When true, manuscript export uses original chunk text instead of extracted content.
     #[serde(default)]
     pub source: bool,
+    /// Archive-only: layer preset. `"default"` (current default — skips
+    /// inference + embeddings), `"full"` (everything including embeddings,
+    /// inference results, synthetic records), `"minimal"` (core graph only).
+    /// Ignored for non-archive formats. For per-flag control use `POST
+    /// /export/archive` with an `ArchiveExportOptions` body.
+    #[serde(default)]
+    pub preset: Option<String>,
 }
 
 fn default_export_format() -> String {
     "json".into()
 }
 
-/// GET /narratives/:id/export?format=csv|graphml|json|manuscript|report
+fn archive_options_for_preset(preset: Option<&str>) -> crate::export::archive_types::ArchiveExportOptions {
+    use crate::export::archive_types::ArchiveExportOptions;
+    let default = ArchiveExportOptions::default();
+    match preset.map(|s| s.to_lowercase()).as_deref() {
+        // Default already has every v1.1.0 toggle ON; "full" only flips the
+        // expensive opt-ins (inference results, embeddings, synthetic records).
+        Some("full") => ArchiveExportOptions {
+            include_inference: true,
+            include_embeddings: true,
+            include_synthetic: true,
+            ..default
+        },
+        // Strip everything except core graph data.
+        Some("minimal") => ArchiveExportOptions {
+            include_sources: false,
+            include_chunks: false,
+            include_state_versions: false,
+            include_analysis: false,
+            include_tuning: false,
+            include_taxonomy: false,
+            include_projects: false,
+            include_annotations: false,
+            include_pinned_facts: false,
+            include_revisions: false,
+            include_workshop_reports: false,
+            include_narrative_plan: false,
+            include_analysis_status: false,
+            ..default
+        },
+        _ => default,
+    }
+}
+
+/// GET /narratives/:id/export?format=csv|graphml|json|manuscript|report|archive|stix[&preset=full|minimal]
 pub async fn export_narrative(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -4257,6 +4367,27 @@ pub async fn export_narrative(
             .into_response();
         }
     };
+
+    // Archive format with a preset bypasses the format-dispatcher so the
+    // caller can opt into the v1.1.0 round-trip layers (annotations, pinned
+    // facts, revisions, workshop reports, plan, analysis-status) plus
+    // inference + embeddings + synthetic records, all via a single query
+    // param. Non-archive formats and archive-without-preset use the default.
+    if matches!(format, crate::export::ExportFormat::Archive) && params.preset.is_some() {
+        let opts = archive_options_for_preset(params.preset.as_deref());
+        return match crate::export::archive::export_archive(&[&id], &state.hypergraph, &opts) {
+            Ok(bytes) => (
+                StatusCode::OK,
+                [(
+                    axum::http::header::CONTENT_TYPE,
+                    crate::export::archive_types::ARCHIVE_CONTENT_TYPE,
+                )],
+                bytes,
+            )
+                .into_response(),
+            Err(e) => error_response(e).into_response(),
+        };
+    }
 
     match crate::export::export_narrative(&id, format, &state.hypergraph, params.source) {
         Ok(output) => (

@@ -1,0 +1,37 @@
+[
+  {
+    "_doc": "=== PINNED FACT: A continuity fact (W4). Either an entity property OR a narrative-wide rule. ===",
+
+    "id": "01911234-5678-7000-8000-000000000501",
+    "_id": "OPTIONAL. UUIDv7. Auto-generated on import if null/missing.",
+
+    "narrative_id": "example-narrative",
+    "_narrative_id": "REQUIRED. The narrative this fact belongs to. Rewritten on import to match the imported narrative slug.",
+
+    "entity_id": "01911234-5678-7000-8000-000000000001",
+    "_entity_id": "OPTIONAL. UUID of the entity this fact attaches to. NULL = narrative-wide fact (e.g. world-building rule). Remapped during import if the entity ID was reassigned.",
+
+    "key": "age",
+    "_key": "REQUIRED. Key within the entity's properties, OR a freeform label for narrative-wide facts. Examples: \"age\", \"hair_color\", \"magic_rule\", \"commitment\".",
+
+    "value": "45",
+    "_value": "REQUIRED. Canonical value. Stored as string for simplicity; LLM prompts include it verbatim during continuity checks.",
+
+    "note": "Established in chapter 1, scene 2",
+    "_note": "OPTIONAL. Writer-supplied rationale or exception note.",
+
+    "created_at": "2026-04-30T12:00:00Z",
+    "updated_at": "2026-04-30T12:00:00Z"
+  },
+  {
+    "_doc": "=== Commitment example — output of /tensa-narrative-llm <nid> commitments. Narrative-wide (entity_id=null), key=\"commitment\" ===",
+    "id": "01911234-5678-7000-8000-000000000502",
+    "narrative_id": "example-narrative",
+    "entity_id": null,
+    "key": "commitment",
+    "value": "Volkov's pistol introduced in scene 1 must fire by scene 9",
+    "note": "skill:tensa-narrative-llm — Chekhov's gun. Status: pending payoff.",
+    "created_at": "2026-04-30T12:00:00Z",
+    "updated_at": "2026-04-30T12:00:00Z"
+  }
+]

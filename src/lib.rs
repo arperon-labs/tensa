@@ -1,6 +1,7 @@
 #[cfg(feature = "adversarial")]
 pub mod adversarial;
 pub mod analysis;
+pub mod analysis_status;
 pub mod api;
 #[cfg(feature = "disinfo")]
 pub mod claims;

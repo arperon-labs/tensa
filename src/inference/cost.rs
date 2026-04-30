@@ -151,6 +151,12 @@ pub fn estimate_cost(job: &InferenceJob, hypergraph: &Hypergraph) -> Result<u64>
         InferenceJobType::SubplotDetection => 5000,
         InferenceJobType::SceneSequel => 3000,
         InferenceJobType::SjuzetReordering => 4000,
+        // Registry-only variants — the actual analyses run via dedicated
+        // endpoints (POST /narratives/:id/communities/summarize and the
+        // diagnose_narrative MCP tool) outside the worker pool, so the
+        // cost here is a placeholder for any future bulk-runner submission.
+        InferenceJobType::CommunitySummary => 5000,
+        InferenceJobType::NarrativeDiagnose => 4000,
         // Sprint D12: Adversarial narrative wargaming
         InferenceJobType::AdversaryPolicy => 2000,
         InferenceJobType::CognitiveHierarchy => 1000,

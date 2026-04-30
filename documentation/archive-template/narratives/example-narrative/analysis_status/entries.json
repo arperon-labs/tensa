@@ -1,0 +1,44 @@
+[
+  {
+    "_doc": "=== ANALYSIS STATUS ENTRY: Tracks which inference job has run for this narrative + lock state ===",
+    "_doc_purpose": "The load-bearing reason this layer exists: a re-imported archive that omitted analysis_status would lose the `Source: Skill, locked: true` rows that protect skill-attested analyses from being silently re-run by a subsequent bulk-analysis pass. With this layer present, locks survive the round-trip.",
+
+    "narrative_id": "example-narrative",
+    "_narrative_id": "REQUIRED. Rewritten on import to match the imported narrative slug.",
+
+    "job_type": "ArcClassification",
+    "_job_type": "REQUIRED. InferenceJobType variant name (e.g. ArcClassification, CharacterArc, SceneSequel, Focalization, SubplotDetection, CommitmentDetection, DramaticIrony, DisinfoFingerprint, ClaimOrigin, CounterNarrative, MotivationInference). Payload-carrying variants are stored as the bare variant name — payload is NOT round-tripped (jobs are re-runnable).",
+
+    "scope": "story",
+    "_scope": "REQUIRED. \"story\" for narrative-wide; \"actor:<uuid>\" / \"arc:<uuid>\" / \"chapter:<index>\" for scoped analyses (e.g. ActorArcClassification has one row per Actor entity, scoped as \"actor:<entity_uuid>\").",
+
+    "source": "Skill",
+    "_source": "REQUIRED. One of: Auto | Skill | Manual. Auto = server worker pool wrote this row after a job completed. Skill = an external skill (e.g. /tensa-narrative-llm) attested this result. Manual = a human entered or attested it. Skill / Manual default to locked: true; Auto defaults to locked: false.",
+
+    "skill": "tensa-narrative-llm",
+    "_skill": "OPTIONAL. Skill name when source=Skill, otherwise null.",
+
+    "model": "claude-opus-4-7",
+    "_model": "OPTIONAL. Model identifier the analysis was produced with.",
+
+    "completed_at": "2026-04-30T12:00:00Z",
+    "_completed_at": "REQUIRED. When the analysis finished.",
+
+    "locked": true,
+    "_locked": "REQUIRED. When true, bulk-analysis runs MUST skip this entry unless force=true. Defaults: Skill / Manual → true, Auto → false.",
+
+    "summary": "Cinderella arc detected — protagonist undergoes upward fortune trajectory inflected by external coercion.",
+    "_summary": "OPTIONAL. One-sentence human-readable description.",
+
+    "confidence": 0.88,
+    "_confidence": "OPTIONAL. Confidence in [0.0, 1.0] the producer attached.",
+
+    "result_refs": [
+      {
+        "kind": "annotation",
+        "id": "01911234-5678-7000-8000-000000000301"
+      }
+    ],
+    "_result_refs": "OPTIONAL. Array of ResultRef pointers to the actual writes (kind: annotation | pinned_fact | situation_update | revision | inference_result | ...). Lets Studio render deep links from the Analyses tab."
+  }
+]

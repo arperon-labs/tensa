@@ -1,0 +1,45 @@
+[
+  {
+    "_doc": "=== SOURCE: A registered information source with trust and bias metadata ===",
+
+    "id": "01911234-5678-7000-8000-000000000201",
+    "_id": "REQUIRED. UUID for this source.",
+
+    "name": "Harbor Security Logs",
+    "_name": "REQUIRED. Human-readable source name.",
+
+    "source_type": "Sensor",
+    "_source_type": "REQUIRED. One of: NewsOutlet, GovernmentAgency, AcademicInstitution, SocialMedia, Sensor, StructuredApi, HumanAnalyst, OsintTool, or Custom(string).",
+
+    "url": null,
+    "description": "CCTV and access logs from the harbor district security system",
+    "trust_score": 0.85,
+    "_trust_score": "REQUIRED. Float 0.0-1.0. Overall reliability of this source.",
+
+    "bias_profile": {
+      "known_biases": [],
+      "political_lean": null,
+      "_political_lean": "OPTIONAL. Float -1.0 (far left) to 1.0 (far right).",
+      "sensationalism": null,
+      "_sensationalism": "OPTIONAL. Float 0.0 (dry factual) to 1.0 (tabloid).",
+      "notes": null
+    },
+
+    "track_record": {
+      "claims_made": 12,
+      "claims_corroborated": 10,
+      "claims_contradicted": 1,
+      "last_evaluated": "2025-03-20T00:00:00Z"
+    },
+    "_track_record": "Cumulative accuracy stats. suggested_trust = corroborated / made.",
+
+    "tags": ["surveillance", "electronic"],
+    "author": null,
+    "publication": null,
+    "ingested_by": "analyst-jane",
+    "ingestion_notes": "Logs obtained via formal request to port authority",
+    "publication_date": null,
+    "created_at": "2026-04-06T12:00:00Z",
+    "updated_at": "2026-04-06T12:00:00Z"
+  }
+]
