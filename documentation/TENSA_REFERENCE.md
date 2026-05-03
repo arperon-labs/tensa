@@ -2,7 +2,7 @@
 
 **TENSA — Temporal Narrative Storage & Analysis**
 
-**Version:** 0.79.0  **Last revised:** 2026-04-25
+**Version:** 0.79.11  **Last revised:** 2026-05-01
 
 This reference tracks the shipped surface of TENSA. Behaviour flagged as scaffolded or partial is listed in [Appendix D](#appendix-d-implementation-status). For the version-by-version delta, see `CHANGELOG.md` at the repo root.
 
@@ -1372,6 +1372,15 @@ Update entity properties. Automatically snapshots the prior state to `sv/`.
 | `id` | string | Yes | Entity UUID |
 | `updates` | object | Yes | JSON with `properties`, `confidence`, `narrative_id` |
 
+### update_situation
+
+*(NEW v0.79.11)* — Update situation primitive fields and merge into `properties`. Mirrors `update_entity`. Forwards to `PUT /situations/:id`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | string | Yes | Situation UUID |
+| `updates` | object | Yes | JSON patch — supported keys: `properties` (object-merge), `name`, `description`, `confidence`, `narrative_id`, `synopsis`, `label`, `status`, `keywords` |
+
 ### delete_entity / delete_situation
 
 Soft-delete by UUID. `restore_entity` / `restore_situation` reverse the soft-delete.
@@ -2151,11 +2160,63 @@ Response: `{answer, citations: [{entity_id?, situation_id?, chunk_id?, excerpt, 
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/geocode` | Geocode a place via Nominatim (cached at `geo/`). Body: `{place}` |
-| `POST` | `/geocode/backfill` | Batch-geocode situations + Location entities missing coords. Body: `{narrative_id?}` |
-| `POST` | `/embeddings/backfill` | Generate embeddings for entities/situations lacking them. Body: `{narrative_id?, force?}` |
+| `POST` | `/geocode/backfill` | Batch-geocode situations + Location entities missing coords. Body: `{narrative_id?, setting?, country_hint?, skip_canonicalization?}`. **As of v0.79.20**: when `narrative_id` and a configured LLM extractor are both available, runs a one-shot batch canonicalization pass to disambiguate ambiguous place names (e.g. *Marseilles* → Marseille, FR — not Marseilles, IL) using narrative-setting context. `setting` defaults to `Narrative.description + genre` when omitted. Each result row records `geo_provenance` (`source` / `llm_canonicalized` / `geocoded` / `manual`). Response: `{situations_geocoded, entities_geocoded, total_updated, canonicalization_used}`. |
+| `POST` | `/embeddings/backfill` | Generate embeddings for entities/situations lacking them. Body: `{narrative_id?, force?}`. **As of v0.79.11**: per-row execution — empty inputs counted into `empty_skipped` instead of aborting the batch; provider errors caught + logged, accumulated into a capped `errors[]` (max 50). Response: `{entities_embedded, situations_embedded, total_updated, skipped, empty_skipped, failed, errors}`. Situation text is built from `name + description + first raw_content block` joined-and-trimmed. |
+| `POST` | `/entities/backfill-settings` | **As of v0.79.50** — deterministic Location → Setting participation backfill. Body: `{narrative_id?}`. For each Location entity, builds a term list from `properties.name + properties.aliases[]` (terms < 3 bytes dropped), then for each Situation builds a haystack from `name + description + spatial.description + spatial.location_name + raw_content[].content`, lowercases both sides, and looks for any term flanked by ASCII-non-alphanumeric bytes (multi-byte UTF-8 chars count as boundaries — French diacritics work). When a match is found and `get_participations_for_pair(loc, sit)` is empty, inserts `Participation { role: Custom("Setting"), … }`. Idempotent — re-running only adds still-missing rows. No LLM calls. Response: `{locations_scanned, situations_scanned, links_created, skipped_existing_pairs, errors[]}`. Studio button: Cast & Places header → `🔗 Backfill location settings`. |
 | `GET` | `/style-embeddings` | List style embeddings (`Vec<StyleEmbedding>`) for the SE picker on the Generate view. See §7.11.10 for the type and §7.11.14 for how the SE flows into the fitness loop |
 
 Geocode precision values: `Exact` (building/amenity), `Area` (suburb/neighbourhood), `Region` (city/state), `Approximate`. Rate-limited to 1 rps per Nominatim usage policy. Negative results (fictional places) are cached.
+
+**`SpatialAnchor.geo_provenance` (v0.79.20+):** distinguishes hard-fact coordinates from inferred ones. Values:
+* `source` — coords came from the source text or a structured-import payload (hard fact, never re-geocoded).
+* `llm_canonicalized` — LLM canonicalized the place name (with narrative-setting context) and Nominatim resolved it under the country filter.
+* `geocoded` — direct Nominatim lookup, no canonicalization (legacy path / `skip_canonicalization: true`).
+* `manual` — user-edited in Studio.
+
+Rows that arrive with lat/lng already populated are stamped `source` automatically by the backfill route; archive imports do the same on read. The Studio map popup renders a one-glyph pill (`◆ source` / `◇ llm canon` / `~ geocoded` / `✎ manual`) so analysts can tell ground truth from inference at a glance.
+
+**Per-location editor (Studio Cast canvas, v0.79.33+):** editing any `Location` entity in `/n/:narrativeId/cast` exposes a Geolocation strip with the current coords + provenance pill and three actions — *Geocode by name* (editable Nominatim query, side-modal preview), *Pick on map* (Leaflet picker with embedded `POST /geocode` search), and *Clear* (drops `latitude`/`longitude`/`geo_*` so the next backfill re-resolves). Both apply paths stamp `geo_provenance: 'manual'`.
+
+**KV layout:** canonicalization results are cached at `geo/canon/{narrative_id}/{normalized_raw_name}` so re-runs of the same narrative skip the LLM call entirely. Country-filtered Nominatim results live at `geo/{cc}|{name}` to keep e.g. *marseille|fr* from colliding with *marseilles|us* in the cache.
+
+## 5.18b Actor Images (v0.79.34+)
+
+Per-actor portraits — uploaded files or generated via a configured text-to-image provider — backed by KV storage and round-tripped through `.tensa` archives.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/settings/image-gen` | Get image-generation provider config (keys redacted) |
+| `PUT` | `/settings/image-gen` | Set image-gen provider. Body matches `ImageGenConfig` (`{provider: "openrouter"\|"openai"\|"local"\|"comfyui"\|"none", …}`). `merge_keys` preserves the existing API key when the body comes back redacted from a Settings round-trip |
+| `GET` | `/settings/image-gen/styles` | Default starter styles: `["Photorealistic","Anime","Pencil sketch","Film noir","Identikit","Book illustration"]` |
+| `GET` | `/entities/:id/images` | List portraits attached to an entity (oldest → newest), each carrying `url: "/images/:id"` |
+| `POST` | `/entities/:id/images` | Upload `{mime, data: <base64>, caption?}`. 12 MB cap. Stores bytes in KV and appends a `properties.media[]` entry on the entity |
+| `POST` | `/images/generate` | `{entity_id, prompt, style?, place?, era?, model?, caption?}` → calls the configured generator, persists the result, attaches it to the entity |
+| `GET` | `/images/:id` | Stream raw bytes with the original `Content-Type` |
+| `DELETE` | `/images/:id` | Remove from KV + detach from `entity.properties.media` |
+
+**KV layout:**
+* `img/m/{narrative_id}/{image_id_v7_BE_BIN_16}` — full `ImageRecord` (mime, source, prompt, style, place, era, provider, model, …)
+* `img/b/{image_id_v7_BE_BIN_16}` — raw bytes
+* `img/i/{image_id_v7_BE_BIN_16}` — `narrative_id` pointer for O(log N) by-id lookup (used by `GET /images/:id` and `DELETE /images/:id`)
+* `cfg/image_gen` — persisted `ImageGenConfig`
+
+**Provider config (`ImageGenConfig`):**
+```json
+// OpenRouter (image-capable models on the OpenAI shape)
+{"provider": "openrouter", "api_key": "sk-or-...", "model": "black-forest-labs/flux-schnell"}
+// OpenAI direct
+{"provider": "openai", "api_key": "sk-...", "model": "gpt-image-1"}
+// Self-hosted server speaking the OpenAI image API
+{"provider": "local", "base_url": "http://localhost:8000/v1", "model": "...", "api_key": null}
+// ComfyUI — config persisted but client not yet implemented
+{"provider": "comfyui", "base_url": "http://localhost:8188", "workflow": null}
+// Disabled
+{"provider": "none"}
+```
+
+**Archive round-trip:** `ArchiveExportOptions.include_images` (default ON) writes per-narrative `narratives/{nid}/images/{image_id}.{ext}` blobs plus `narratives/{nid}/images/index.json` carrying every record. Import remaps `entity_id` against the existing remap table, retargets `narrative_id` to the final slug, recomputes `bytes_len`, and rewrites all three KV keys via the same `save_image` path used by the live upload route. Manifest gains a `layers.images: bool` flag.
+
+**Studio surface:** Editing an `Actor` entity in `/n/:narrativeId/cast` exposes a Photos strip with thumbnails + Upload + Generate buttons. The Generate modal pre-fills `place` from the narrative's description and `era` from its genre (same hint source as the geocoder canon), offers the six default styles via a combo, and lets the user fully edit the composed prompt before submitting. Provider config lives at Settings → Image Generation.
 
 ## 5.19 Settings
 
@@ -5055,6 +5116,18 @@ DSL (parsed by `syllogism::parse_statement`, shared by executor + REST):
 
 Quantifiers: `All`, `Most`, `Many`, `Few`, `AlmostAll`, `Some`, `No`.
 
+**Predicate forms** (default `TypePredicateResolver`, expanded in v0.79.32 to match the Studio panel hint):
+
+| Form | Example | Match |
+|------|---------|-------|
+| `entity` / `*` | `entity` | every entity (μ = 1.0) |
+| `type:<EntityType>` | `type:Actor` | `Actor` / `Location` / `Artifact` / `Concept` / `Organization` (case-insensitive) |
+| `maturity=<level>` | `maturity=Validated` | `Candidate` / `Reviewed` / `Validated` / `GroundTruth` (case-insensitive; `ground_truth` accepted) |
+| `property:<key>=<value>` | `property:role=protagonist` | `entity.properties[key]` literal-equals `value` (string/null/number/bool coerced) |
+| `confidence<op><number>` | `confidence>0.7`, `confidence<=0.5` | crisp comparison on `entity.confidence`; ops: `>`, `<`, `>=`, `<=`, `=` |
+
+Plug a custom [`PredicateResolver`](../src/fuzzy/syllogism.rs) for richer logic (text filters, embedding similarity, …); unknown ids on the default resolver return a `400` enumerating these five forms.
+
 TensaQL:
 ```sql
 VERIFY SYLLOGISM {
@@ -5076,7 +5149,7 @@ GET /fuzzy/syllogism/{nid}/{proof_id}
 
 KV: `fz/syllog/{nid}/{proof_id_v7_BE_16}`.
 
-Implementation: [`src/fuzzy/syllogism.rs`](../src/fuzzy/syllogism.rs) + [`syllogism_tests.rs`](../src/fuzzy/syllogism_tests.rs) (12 tests).
+Implementation: [`src/fuzzy/syllogism.rs`](../src/fuzzy/syllogism.rs) + [`syllogism_tests.rs`](../src/fuzzy/syllogism_tests.rs) (14 tests as of v0.79.32).
 
 ## 14.7 Fuzzy Formal Concept Analysis (FCA)
 
@@ -5330,7 +5403,7 @@ Backward compat: existing serialized plans deserialize unchanged because `FuzzyC
 
 ## 14.12 MCP Tools
 
-14 new fuzzy MCP tools land in Phase 11 (tool count: **159 → 173**). Phase 5 of the Graded Acceptability sprint adds 5 more (tool count: **173 → 178**).
+14 new fuzzy MCP tools land in Phase 11 (tool count: **159 → 173**). Phase 5 of the Graded Acceptability sprint adds 5 more (tool count: **173 → 178**). v0.79.11 adds `update_situation` (tool count: **178 → 179**).
 
 | Tool | Wraps |
 |---|---|
@@ -5378,10 +5451,14 @@ Eight `fz/*` prefixes + the `cfg/fuzzy` singleton. UUID components follow the gl
 
 `/n/:narrativeId/fuzzy` — dedicated canvas tab alongside Synth, Reconstruction, and Opinion. Deep-linkable via `?sub=config|aggregation|rules|lattice`.
 
-Layout (four sub-panels):
+Layout (eight sub-panels — three were backend-only on the original Phase 12 ship and are now surfaced as of v0.79.10):
 
 - **Config** — GET/PUT `/fuzzy/config` with live-save semantics. Also embeddable inside the `WorkspaceHeader` `◇` indicator's slide-in Modal.
 - **Aggregation Playground** — up to 10 source-confidence slots; debounced 250 ms `POST /fuzzy/aggregate` per edit. Surfaces descriptor + t-norm + weight/measure inputs per aggregator kind.
+- **Measure Compare** *(Graded Sprint Phase 5)* — symmetric-default `mean` vs learned-`choquet(measure)` side-by-side; auto-picks the first learned measure, highlights `|delta| > 1e-3`. Deep-link: `?sub=comparison`.
+- **Quantify** *(NEW v0.79.10, Phase 6 surface)* — `POST /fuzzy/quantify`. Picker for Most / Many / Almost-all / Few + entity-type filter + crisp predicate spec (`confidence>0.7`, `maturity=Validated`, …). Renders the quantifier ramp `μ_Q(r)` as a canvas chart with the response cardinality-ratio cursor highlighted, plus per-session history strip. Deep-link: `?sub=quantify`.
+- **Syllogism** *(NEW v0.79.10, Phase 7 surface)* — `POST /fuzzy/syllogism/verify`. Three premise textareas (major / minor / conclusion) using the Phase 7 tiny-DSL (`ALL type:Actor IS type:Actor`), t-norm picker, threshold slider, optional figure hint, three Figure I/II/III starter examples. Result card shows valid/invalid pill, degree gauge with threshold marker, persisted `proof_id`. Deep-link: `?sub=syllogism`.
+- **Hybrid Prob.** *(NEW v0.79.10, Phase 10 surface)* — `POST /fuzzy/hybrid/probability`, list / get / delete. Three sections: graded event μ_E with predicate-kind switch (`quantifier` / `mamdani_rule` / `custom`); discrete-distribution editor with per-row `EntityComboBox` + numeric `P(e)` (and per-row `μ_E(e)` in `custom` mode), running Σ in the table footer with sum-to-1 (±1e-6) validation, helper buttons for `uniform` / `normalize` / `+ outcome`; result gauge + persisted-reports table (extracted into `HybridReportsTable.tsx` to keep `HybridPanel.tsx` under the 500-line cap). Deep-link: `?sub=hybrid`.
 - **Rule Editor** — narrative-scoped Mamdani rule CRUD (triangular MF in the form; trapezoidal + Gaussian still accepted over the wire).
 - **Concept Lattice Viewer** — D3 force-directed lattice (concepts as nodes, Hasse edges as links; hover surfaces extent + intent). Uses the existing `d3` umbrella (`d3.forceSimulation` / `forceLink` / `forceManyBody`); no new npm deps.
 
@@ -5393,7 +5470,7 @@ Cross-canvas surface wires:
 - **Ask Console** — expandable "Fuzzy semantics" disclosure; selection rides through as `?tnorm=…&aggregator=…`.
 - **Ingest view** — site-default t-norm + aggregator pickers next to the existing thresholds block; both PUT directly to `/fuzzy/config`.
 
-All new component files under the 500-line cap ([`FuzzyCanvas.tsx`](../studio/src/workspace/canvases/FuzzyCanvas.tsx), [`FuzzyConfigPanel.tsx`](../studio/src/components/fuzzy/FuzzyConfigPanel.tsx), [`AggregationPlayground.tsx`](../studio/src/components/fuzzy/AggregationPlayground.tsx), [`RuleEditor.tsx`](../studio/src/components/fuzzy/RuleEditor.tsx), [`ConceptLatticeViewer.tsx`](../studio/src/components/fuzzy/ConceptLatticeViewer.tsx), [`FuzzyBadge.tsx`](../studio/src/components/fuzzy/FuzzyBadge.tsx), [`useFuzzyCanvas.ts`](../studio/src/components/fuzzy/useFuzzyCanvas.ts), [`fuzzyStyles.ts`](../studio/src/components/fuzzy/fuzzyStyles.ts)).
+All new component files under the 500-line cap ([`FuzzyCanvas.tsx`](../studio/src/workspace/canvases/FuzzyCanvas.tsx), [`FuzzyConfigPanel.tsx`](../studio/src/components/fuzzy/FuzzyConfigPanel.tsx), [`AggregationPlayground.tsx`](../studio/src/components/fuzzy/AggregationPlayground.tsx), [`MeasureComparisonPanel.tsx`](../studio/src/components/fuzzy/MeasureComparisonPanel.tsx), [`QuantifyPanel.tsx`](../studio/src/components/fuzzy/QuantifyPanel.tsx), [`SyllogismPanel.tsx`](../studio/src/components/fuzzy/SyllogismPanel.tsx), [`HybridPanel.tsx`](../studio/src/components/fuzzy/HybridPanel.tsx), [`HybridReportsTable.tsx`](../studio/src/components/fuzzy/HybridReportsTable.tsx), [`RuleEditor.tsx`](../studio/src/components/fuzzy/RuleEditor.tsx), [`ConceptLatticeViewer.tsx`](../studio/src/components/fuzzy/ConceptLatticeViewer.tsx), [`FuzzyBadge.tsx`](../studio/src/components/fuzzy/FuzzyBadge.tsx), [`useFuzzyCanvas.ts`](../studio/src/components/fuzzy/useFuzzyCanvas.ts), [`fuzzyStyles.ts`](../studio/src/components/fuzzy/fuzzyStyles.ts)). The shared truth-color helper `fuzzyValueColor()` lives in `fuzzyStyles.ts`; the cross-surface relative-time formatter lives at [`studio/src/utils/time.ts`](../studio/src/utils/time.ts).
 
 `cd studio && npm run build` clean; FuzzyCanvas chunks to 21.7 kB (gzip 7.42 kB).
 
@@ -6403,14 +6480,14 @@ A collapsed **Legacy Views** accordion (localStorage-persisted, default closed) 
 | `timeline` | D3 horizontal temporal lanes; brush writes workspace `timeRange` filter |
 | `map` | Leaflet geo view with Stadia dark tiles; viewport writes `spatialBounds` filter |
 | `matrix` | Co-occurrence relationship heatmap; cell click focuses a community |
-| `embeddings` | 2D/3D embedding scatter with NodeDetail-style drill-in |
+| `embeddings` | 2D/3D embedding scatter with NodeDetail-style drill-in. Two projection modes selectable in the toolbar: **UMAP** (non-linear, neighborhood-preserving — preserves clusters; deterministic per dataset) and **PCA** (linear, top-16 principal components computed once via power iteration with deflation; X/Y/Z dropdowns swap which PCs map to which screen axes, with variance share shown next to each option e.g. `PC1 (37.4%)`). The header **📏 Ruler** toggle measures cosine similarity + cosine distance between the last two selected points using the **original embedding vectors** (not the projection), so the readout is honest regardless of mode. Implementation: [studio/src/utils/projection.ts](../studio/src/utils/projection.ts) (PCA + cosine helpers), [studio/src/views/EmbeddingSpace.tsx](../studio/src/views/EmbeddingSpace.tsx) (canvas). |
 | `ask` | RAG / DRIFT / PPR question answering scoped to the narrative |
 | `manuscript` | Manuscript prose editor wrapped in `MentionAnnotator` (bidirectional entity linking) |
 | `plan` | Narrative plan CRUD, fitness-loop chapter generation, binder/corkboard/outliner |
 | `cast` | Character/place management with research panel, participant wiring |
 | `workshop` | Tiered critique runner + architecture readout (D9 commitments, rhythm, fabula/sjužet, …) |
 | `history` | Revision list + diff viewer + revert |
-| `analysis` | Analysis Hub: 26 `InferenceJobType` cards with bespoke and generic result renderers |
+| `analysis` | Analysis Hub: 27 `InferenceJobType` cards with bespoke and generic result renderers + `RecentRuns` strip (v0.79.7) for one-click reload of prior runs |
 | `fingerprint` | Multi-layer narrative style profile + stylometry |
 | `debugger` | Narrative debugger (D10/D11) — trace contradictions, dead ends, rule violations |
 | `adaptation` | Adaptation studio — cross-medium transforms, style transfer |
@@ -6519,7 +6596,7 @@ The writer-facing views below are now mounted inside their respective canvas tab
 | `PlanView` + `GenerateView` | `plan` | Plan CRUD + fitness-loop chapter generation with target-fingerprint + SE picker |
 | `Binder / Corkboard / Outliner / Scrivenings` | `plan` | Sprint W8 manuscript-tooling modes (subpages flatten into the `plan` tab) |
 | `Hypergraph` polygon metaphor | `graph` (layout toggle) | Oliver/Zhang/Zhang 2023 convex-polygon situations; lib at [studio/src/lib/hypergraph/](../studio/src/lib/hypergraph/) |
-| `Analysis Hub` | `analysis` | 26 `InferenceJobType`s; 16 bespoke renderers + 1 shared `EntityScoresViz` |
+| `Analysis Hub` | `analysis` | 27 `InferenceJobType`s; 16 bespoke renderers + 1 shared `EntityScoresViz`. `RecentRuns` strip (v0.79.7) above the cards lists the latest job per type from `/jobs?narrative_id=…` with status-colored chips; clicking a Completed chip reloads its result. Per-card status badges + result-header "ran Nm ago" reuse the same fetch. AnomalyViz adds a z-score scatter chart with severity bands (\|z\|=2.5 amber, \|z\|=3 danger); GameTheoryViz renders QRE strategies as stacked horizontal bars per player with a Shannon-entropy mixedness indicator; PatternViz shows a frequency histogram + narrative-coverage matrix. |
 | `Sources` | workspace-aware | `GET /sources?narrative_id=<id>` when a narrative is locked |
 | `CollectionsView`, `CompileView`, `SituationList`, `ArcAndTaxonomy`, `ScriveningsView`, `SourceView` | *(legacy `/story/*` paths)* | Subpages without a canvas home yet — reachable via Story Hub |
 

@@ -41,6 +41,8 @@ pub mod fuzzy;
 #[cfg(feature = "server")]
 pub mod generation_routes;
 #[cfg(feature = "server")]
+pub mod image_routes;
+#[cfg(feature = "server")]
 pub mod import_routes;
 #[cfg(feature = "server")]
 pub mod inference;

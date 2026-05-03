@@ -109,6 +109,10 @@ pub struct ArchiveLayers {
     /// so a re-imported archive keeps its lock semantics.
     #[serde(default)]
     pub analysis_status: bool,
+    /// Actor images — uploaded + generated portraits stored under
+    /// `narratives/{nid}/images/`.
+    #[serde(default)]
+    pub images: bool,
 }
 
 impl Default for ArchiveLayers {
@@ -130,6 +134,7 @@ impl Default for ArchiveLayers {
             workshop_reports: false,
             narrative_plan: false,
             analysis_status: false,
+            images: false,
         }
     }
 }
@@ -212,6 +217,9 @@ pub struct ArchiveExportOptions {
     /// Include the analysis-status registry (preserves lock state).
     #[serde(default = "default_true")]
     pub include_analysis_status: bool,
+    /// Include actor images (uploaded + generated portraits).
+    #[serde(default = "default_true")]
+    pub include_images: bool,
     /// Pretty-print JSON (larger but human-readable).
     #[serde(default = "default_true")]
     pub pretty: bool,
@@ -245,6 +253,7 @@ impl Default for ArchiveExportOptions {
             include_workshop_reports: true,
             include_narrative_plan: true,
             include_analysis_status: true,
+            include_images: true,
             pretty: true,
             include_synthetic: false,
         }
@@ -309,6 +318,9 @@ pub struct ArchiveImportReport {
     pub narrative_plans_created: usize,
     #[serde(default)]
     pub analysis_status_entries_created: usize,
+    /// Actor images imported (uploaded + generated portraits).
+    #[serde(default)]
+    pub images_created: usize,
     /// Old UUID → new UUID mappings for clashed records.
     pub id_remaps: HashMap<String, String>,
     /// Non-fatal warnings (e.g. dangling references in relaxed mode).
@@ -343,6 +355,7 @@ impl Default for ArchiveImportReport {
             workshop_reports_created: 0,
             narrative_plans_created: 0,
             analysis_status_entries_created: 0,
+            images_created: 0,
             id_remaps: HashMap::new(),
             warnings: Vec::new(),
             errors: Vec::new(),

@@ -3547,9 +3547,10 @@ dependencies = [
 
 [[package]]
 name = "tensa"
-version = "0.79.6"
+version = "0.79.50"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "base64 0.22.1",
  "bincode",

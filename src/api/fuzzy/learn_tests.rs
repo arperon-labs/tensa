@@ -89,6 +89,8 @@ fn make_test_state() -> Arc<AppState> {
         #[cfg(feature = "studio-chat")]
         chat_mcp_proxies: Arc::new(crate::studio_chat::McpProxySet::new()),
         synth_registry: Arc::new(SurrogateRegistry::default()),
+        image_gen_config: std::sync::RwLock::new(crate::images::ImageGenConfig::None),
+        image_generator: std::sync::RwLock::new(None),
     })
 }
 
@@ -537,5 +539,170 @@ async fn t7_post_gradual_argumentation_unknown_semantics_rejects_400() {
             || resp.status() == StatusCode::UNPROCESSABLE_ENTITY,
         "unknown variant must yield 4xx; got {}",
         resp.status()
+    );
+}
+
+// ── Wire-shape consistency: bare-string `tnorm` ─────────────────────────────
+//
+// Pre-fix the `tnorm` field on `/analysis/argumentation/gradual` and on
+// `POST /fuzzy/rules` was deserialised directly as the `TNormKind` enum
+// (`{"kind":"godel"}`), while every OTHER fuzzy endpoint accepts the
+// bare-string registry name (`"godel"`). The mismatch tripped real
+// callers — see `documentation/fuzzy_capabilities_report.md` §A.2.
+// These tests lock the bare-string path on both endpoints so the
+// inconsistency cannot regress.
+
+#[tokio::test]
+async fn t9_gradual_accepts_bare_string_tnorm() {
+    let state = make_test_state();
+    let _ = seed_contention_pair(&state, "case-graded-t9");
+
+    // Bare string `"godel"` — the pre-fix codebase rejected this with
+    // `tnorm: invalid type: string "godel", expected adjacently tagged
+    // enum TNormKind`.
+    let body_json = serde_json::json!({
+        "narrative_id": "case-graded-t9",
+        "gradual_semantics": "HCategoriser",
+        "tnorm": "godel",
+    });
+    let req: GradualArgumentationRequest =
+        serde_json::from_value(body_json).expect("bare-string tnorm must deserialise");
+
+    let resp = run_gradual(State(state.clone()), Json(req))
+        .await
+        .into_response();
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "bare-string tnorm 'godel' must reach the handler and succeed"
+    );
+}
+
+#[tokio::test]
+async fn t10_gradual_rejects_unknown_tnorm_string() {
+    let state = make_test_state();
+    let _ = seed_contention_pair(&state, "case-graded-t10");
+
+    // Bare string with a name no registry entry resolves — must surface
+    // as `InvalidInput` → HTTP 400, not panic and not silently default.
+    let req = GradualArgumentationRequest {
+        narrative_id: "case-graded-t10".into(),
+        gradual_semantics: GradualSemanticsKind::HCategoriser,
+        tnorm: Some("einstein-tnorm-not-real".into()),
+    };
+    let resp = run_gradual(State(state.clone()), Json(req))
+        .await
+        .into_response();
+    assert_eq!(
+        resp.status(),
+        StatusCode::BAD_REQUEST,
+        "unknown t-norm name must yield 400, not 500 or 200"
+    );
+}
+
+#[tokio::test]
+async fn t11_create_rule_accepts_bare_string_tnorm() {
+    use crate::api::fuzzy::rules::{create_rule, CreateRuleBody};
+    use crate::fuzzy::rules::{FuzzyCondition, FuzzyOutput, MembershipFunction};
+
+    let state = make_test_state();
+
+    let body_json = serde_json::json!({
+        "name": "wire-string-tnorm-test",
+        "narrative_id": "case-graded-t11",
+        "antecedent": [
+            {
+                "variable_path": "entity.confidence",
+                "membership": {"trapezoidal": {"a": 0.5, "b": 0.7, "c": 1.0, "d": 1.0}},
+                "linguistic_term": "high"
+            }
+        ],
+        "consequent": {
+            "variable": "risk",
+            "membership": {"triangular": {"a": 0.5, "b": 0.85, "c": 1.0}},
+            "linguistic_term": "elevated"
+        },
+        "tnorm": "lukasiewicz",
+        "enabled": true
+    });
+    let body: CreateRuleBody =
+        serde_json::from_value(body_json).expect("bare-string tnorm must deserialise");
+    // Sanity — typed roundtrip preserves the bare string.
+    assert_eq!(body.tnorm.as_deref(), Some("lukasiewicz"));
+    // Also sanity-check that the field types compose as expected.
+    let _ = (
+        FuzzyCondition {
+            variable_path: "entity.confidence".into(),
+            membership: MembershipFunction::Trapezoidal { a: 0.5, b: 0.7, c: 1.0, d: 1.0 },
+            linguistic_term: "high".into(),
+        },
+        FuzzyOutput {
+            variable: "risk".into(),
+            membership: MembershipFunction::Triangular { a: 0.5, b: 0.85, c: 1.0 },
+            linguistic_term: "elevated".into(),
+        },
+    );
+
+    let resp = create_rule(State(state.clone()), Json(body))
+        .await
+        .into_response();
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "bare-string tnorm 'lukasiewicz' must succeed on /fuzzy/rules"
+    );
+
+    // The persisted rule must have the resolved Łukasiewicz t-norm —
+    // round-trip through the registry, not a silently-defaulted Gödel.
+    let body_v = read_body(resp).await;
+    let rule_id_str = body_v
+        .get("rule_id")
+        .and_then(|v| v.as_str())
+        .expect("rule_id");
+    let rule_id: Uuid = rule_id_str.parse().expect("uuid");
+    let stored = crate::fuzzy::rules::load_rule_fn(
+        state.hypergraph.store(),
+        "case-graded-t11",
+        &rule_id,
+    )
+    .expect("load_rule")
+    .expect("rule persisted");
+    assert!(
+        matches!(stored.tnorm, crate::fuzzy::tnorm::TNormKind::Lukasiewicz),
+        "persisted rule must carry the resolved Łukasiewicz t-norm; got {:?}",
+        stored.tnorm
+    );
+}
+
+#[tokio::test]
+async fn t12_create_rule_rejects_unknown_tnorm_string() {
+    use crate::api::fuzzy::rules::{create_rule, CreateRuleBody};
+    use crate::fuzzy::rules::{FuzzyCondition, FuzzyOutput, MembershipFunction};
+
+    let state = make_test_state();
+
+    let body = CreateRuleBody {
+        name: "wire-bad-tnorm-test".into(),
+        narrative_id: "case-graded-t12".into(),
+        antecedent: vec![FuzzyCondition {
+            variable_path: "entity.confidence".into(),
+            membership: MembershipFunction::Trapezoidal { a: 0.5, b: 0.7, c: 1.0, d: 1.0 },
+            linguistic_term: "high".into(),
+        }],
+        consequent: FuzzyOutput {
+            variable: "risk".into(),
+            membership: MembershipFunction::Triangular { a: 0.5, b: 0.85, c: 1.0 },
+            linguistic_term: "elevated".into(),
+        },
+        tnorm: Some("frank-tnorm-not-shipped".into()),
+        enabled: Some(true),
+    };
+    let resp = create_rule(State(state.clone()), Json(body))
+        .await
+        .into_response();
+    assert_eq!(
+        resp.status(),
+        StatusCode::BAD_REQUEST,
+        "unknown t-norm name must yield 400 on /fuzzy/rules"
     );
 }

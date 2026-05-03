@@ -135,6 +135,75 @@ impl EmbeddedBackend {
         to_json(entity)
     }
 
+    /// Update situation properties by UUID. Mirrors `update_entity_impl`.
+    pub(crate) async fn update_situation_impl(&self, id: &str, updates: Value) -> Result<Value> {
+        let uuid = parse_uuid(id)?;
+        if !updates.is_object() {
+            return Err(TensaError::InvalidQuery(
+                "updates must be a JSON object".into(),
+            ));
+        }
+
+        let situation = self
+            .hypergraph()
+            .update_situation(&uuid, |s| s.apply_patch(&updates))?;
+
+        to_json(situation)
+    }
+
+    /// Sprint P4.2 retro-enrichment — update an existing participation in place.
+    /// Looks up the row by `(situation_id, entity_id, seq)`, applies a JSON
+    /// patch (info_set / payoff / action / role), and writes both forward and
+    /// reverse keys via `Hypergraph::update_participation`.
+    pub(crate) async fn update_participation_impl(
+        &self,
+        situation_id: &str,
+        entity_id: &str,
+        seq: u16,
+        updates: Value,
+    ) -> Result<Value> {
+        let sit_uuid = parse_uuid(situation_id)?;
+        let ent_uuid = parse_uuid(entity_id)?;
+        if !updates.is_object() {
+            return Err(TensaError::InvalidQuery(
+                "updates must be a JSON object".into(),
+            ));
+        }
+        let pairs = self
+            .hypergraph()
+            .get_participations_for_pair(&ent_uuid, &sit_uuid)?;
+        let mut existing = pairs
+            .into_iter()
+            .find(|p| p.seq == seq)
+            .ok_or_else(|| {
+                TensaError::NotFound(format!(
+                    "participation (situation={situation_id}, entity={entity_id}, seq={seq}) not found"
+                ))
+            })?;
+
+        if let Some(v) = updates.get("info_set") {
+            existing.info_set = if v.is_null() {
+                None
+            } else {
+                serde_json::from_value(v.clone()).ok()
+            };
+        }
+        if let Some(v) = updates.get("payoff") {
+            existing.payoff = if v.is_null() { None } else { Some(v.clone()) };
+        }
+        if let Some(v) = updates.get("action") {
+            existing.action = v.as_str().map(String::from);
+        }
+        if let Some(v) = updates.get("role") {
+            if let Ok(r) = serde_json::from_value::<crate::types::Role>(v.clone()) {
+                existing.role = r;
+            }
+        }
+
+        self.hypergraph().update_participation(&existing)?;
+        to_json(existing)
+    }
+
     /// List entities, optionally filtered by type, narrative, and limit.
     pub(crate) async fn list_entities_impl(
         &self,

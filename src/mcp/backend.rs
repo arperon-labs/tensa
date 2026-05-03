@@ -137,6 +137,25 @@ pub trait McpBackend: Send + Sync {
         updates: Value,
     ) -> impl std::future::Future<Output = Result<Value>> + Send;
 
+    /// Update situation properties by UUID. Mirrors `update_entity` shape.
+    fn update_situation(
+        &self,
+        id: &str,
+        updates: Value,
+    ) -> impl std::future::Future<Output = Result<Value>> + Send;
+
+    /// Sprint P4.2 retro-enrichment: update an existing participation in place
+    /// to fill in `info_set`, `payoff`, `action`, or `role` without re-creating
+    /// the row. The triplet `(situation_id, entity_id, seq)` is the participation
+    /// key; `updates` is a JSON patch object.
+    fn update_participation(
+        &self,
+        situation_id: &str,
+        entity_id: &str,
+        seq: u16,
+        updates: Value,
+    ) -> impl std::future::Future<Output = Result<Value>> + Send;
+
     /// List entities, optionally filtered by type, narrative, and limit.
     fn list_entities(
         &self,

@@ -4871,6 +4871,7 @@ mod tests {
                 location_entity: None,
                 location_name: None,
                 description: None,
+                geo_provenance: Some(crate::types::GeoProvenance::Source),
             }),
             game_structure: None,
             causes: vec![],

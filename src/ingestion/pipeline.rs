@@ -3200,6 +3200,7 @@ impl IngestionPipeline {
                 location_entity: None,
                 location_name: Some(loc.clone()),
                 description: Some(loc.clone()),
+                geo_provenance: None,
             }),
             game_structure: None,
             causes: vec![],

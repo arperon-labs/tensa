@@ -13,6 +13,32 @@ use uuid::Uuid;
 use crate::error::Result;
 use crate::hypergraph::Hypergraph;
 
+// ─── Display helpers ────────────────────────────────────────
+
+/// Resolve an entity UUID to its display name; falls back to the UUID string if
+/// the entity is missing or has no `name` property. Used by pathology message
+/// formatters so user-facing messages quote names instead of opaque UUIDs.
+fn entity_name_or_id(hg: &Hypergraph, id: &Uuid) -> String {
+    hg.get_entity(id)
+        .ok()
+        .and_then(|e| {
+            e.properties
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| id.to_string())
+}
+
+/// Resolve a situation UUID to its display name; falls back to the UUID string
+/// if the situation is missing or has no `name`.
+fn situation_name_or_id(hg: &Hypergraph, id: &Uuid) -> String {
+    hg.get_situation(id)
+        .ok()
+        .and_then(|s| s.name)
+        .unwrap_or_else(|| id.to_string())
+}
+
 // ─── Types ──────────────────────────────────────────────────
 
 /// Severity of a narrative pathology.
@@ -609,12 +635,14 @@ fn check_impossible_knowledge(
     };
     for event in &irony_map.events {
         if event.irony_intensity > 5.0 {
+            let sit_name = situation_name_or_id(hg, &event.situation_id);
+            let char_name = entity_name_or_id(hg, &event.character_id);
             let p = NarrativePathology::new(
                 PathologyKind::ImpossibleKnowledge,
                 PathologySeverity::Info,
                 format!(
-                    "High knowledge gap ({:.0} facts) at situation {} for character {} — verify character doesn't act on unknown info",
-                    event.irony_intensity, event.situation_id, event.character_id
+                    "High knowledge gap ({:.0} facts) at situation '{}' for character '{}' — verify character doesn't act on unknown info",
+                    event.irony_intensity, sit_name, char_name
                 ),
             )
             .with_situation(event.situation_id)
@@ -865,13 +893,14 @@ fn check_arc_abandonment(
         if arc.completeness < cfg.arc_abandonment_completeness
             && !arc.motivation_trajectory.is_empty()
         {
+            let char_name = entity_name_or_id(hg, &arc.character_id);
             out.push(
                 NarrativePathology::new(
                     PathologyKind::ArcAbandonment,
                     PathologySeverity::Warning,
                     format!(
-                        "Character {} has arc type {:?} but completeness is only {:.0}%",
-                        arc.character_id,
+                        "Character '{}' has arc type {:?} but completeness is only {:.0}%",
+                        char_name,
                         arc.arc_type,
                         arc.completeness * 100.0
                     ),
@@ -905,13 +934,14 @@ fn check_flat_protagonist(
         let last = arc.motivation_trajectory[arc.motivation_trajectory.len() - 1].1;
         let delta = (last - first).abs();
         if delta < (1.0 - cfg.flat_protagonist_cosine) {
+            let char_name = entity_name_or_id(hg, &arc.character_id);
             out.push(
                 NarrativePathology::new(
                     PathologyKind::FlatProtagonist,
                     PathologySeverity::Info,
                     format!(
-                        "Character {} undergoes minimal change (|Δmotivation| = {:.3})",
-                        arc.character_id, delta
+                        "Character '{}' undergoes minimal change (|Δmotivation| = {:.3})",
+                        char_name, delta
                     ),
                 )
                 .with_entity(arc.character_id)

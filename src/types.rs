@@ -252,6 +252,76 @@ pub struct Situation {
     pub transaction_time: Option<DateTime<Utc>>,
 }
 
+impl Situation {
+    /// Apply a JSON patch to mutable fields. Mirrors `Entity::apply_patch`.
+    /// Supported keys: `properties` (object, merged into existing — also creates the
+    /// object if `properties` is null), `name`, `description`, `confidence`, `narrative_id`,
+    /// `synopsis`, `label`, `status`, `keywords` (array of strings).
+    pub fn apply_patch(&mut self, updates: &serde_json::Value) {
+        if let Some(obj) = updates.get("properties").and_then(|v| v.as_object()) {
+            if !self.properties.is_object() {
+                self.properties = serde_json::Value::Object(serde_json::Map::new());
+            }
+            if let Some(existing) = self.properties.as_object_mut() {
+                for (k, v) in obj {
+                    existing.insert(k.clone(), v.clone());
+                }
+            }
+        }
+        if let Some(v) = updates.get("name") {
+            self.name = v.as_str().map(String::from);
+        }
+        if let Some(v) = updates.get("description") {
+            self.description = v.as_str().map(String::from);
+        }
+        if let Some(confidence) = updates.get("confidence").and_then(|v| v.as_f64()) {
+            self.confidence = confidence as f32;
+        }
+        if let Some(v) = updates.get("narrative_id") {
+            self.narrative_id = v.as_str().map(String::from);
+        }
+        if let Some(v) = updates.get("synopsis") {
+            self.synopsis = v.as_str().map(String::from);
+        }
+        if let Some(v) = updates.get("label") {
+            self.label = v.as_str().map(String::from);
+        }
+        if let Some(v) = updates.get("status") {
+            self.status = v.as_str().map(String::from);
+        }
+        if let Some(arr) = updates.get("keywords").and_then(|v| v.as_array()) {
+            self.keywords = arr
+                .iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect();
+        }
+        // Sprint P4.2 retro-enrichment: typed slots accept either `null` (clear)
+        // or a structured object (set). Unknown shapes are silently ignored —
+        // the REST `PUT /situations/:id` endpoint applies stricter typed
+        // validation; this MCP path errs on the side of accepting whatever the
+        // skill reasoning produces.
+        if let Some(v) = updates.get("game_structure") {
+            self.game_structure = if v.is_null() {
+                None
+            } else {
+                serde_json::from_value(v.clone()).ok()
+            };
+        }
+        if let Some(v) = updates.get("deterministic") {
+            self.deterministic = if v.is_null() { None } else { Some(v.clone()) };
+        }
+        if let Some(v) = updates.get("probabilistic") {
+            self.probabilistic = if v.is_null() { None } else { Some(v.clone()) };
+        }
+        if let Some(v) = updates.get("temporal") {
+            if let Ok(t) = serde_json::from_value(v.clone()) {
+                self.temporal = t;
+            }
+        }
+        self.updated_at = chrono::Utc::now();
+    }
+}
+
 // ─── Participation ────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -442,6 +512,23 @@ pub enum TimeGranularity {
 
 // ─── Spatial ──────────────────────────────────────────────────
 
+/// How a SpatialAnchor's lat/lng came to be set. Distinguishes hard facts
+/// (coordinates from source text or structured import) from inferred values
+/// (Nominatim hits, with or without LLM canonicalization).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GeoProvenance {
+    /// lat/lng came from the source text or a structured-import payload — hard fact.
+    Source,
+    /// Place name was canonicalized by an LLM (with narrative-setting context),
+    /// then resolved to lat/lng by Nominatim with a country filter.
+    LlmCanonicalized,
+    /// Place name was sent to Nominatim directly without canonicalization.
+    Geocoded,
+    /// User edited the coordinates in Studio.
+    Manual,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SpatialAnchor {
@@ -454,6 +541,10 @@ pub struct SpatialAnchor {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub location_name: Option<String>,
     pub description: Option<String>,
+    /// Where the coordinates came from. None on legacy records (treat as `Geocoded`
+    /// when latitude is set and `Source` is not knowable retroactively).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geo_provenance: Option<GeoProvenance>,
 }
 
 impl Default for SpatialAnchor {
@@ -465,6 +556,7 @@ impl Default for SpatialAnchor {
             location_entity: None,
             location_name: None,
             description: None,
+            geo_provenance: None,
         }
     }
 }

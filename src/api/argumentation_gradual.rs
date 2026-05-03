@@ -30,9 +30,15 @@ use crate::analysis::argumentation_gradual::{GradualResult, GradualSemanticsKind
 use crate::api::routes::{error_response, json_ok};
 use crate::api::server::AppState;
 use crate::error::TensaError;
-use crate::fuzzy::tnorm::TNormKind;
+use crate::fuzzy::registry::TNormRegistry;
 
 /// Request body for `POST /analysis/argumentation/gradual`.
+///
+/// `tnorm` accepts the bare-string registry name (e.g. `"godel"`,
+/// `"goguen"`, `"lukasiewicz"`, `"hamacher"`) — the same shape the
+/// `/fuzzy/aggregate`, `/fuzzy/hybrid/probability`, and `/fuzzy/quantify`
+/// endpoints use. Unknown names surface as `InvalidInput → HTTP 400`.
+/// `None` = canonical Gödel formula (bit-identical to the cited paper).
 #[derive(Debug, Deserialize)]
 pub struct GradualArgumentationRequest {
     /// Source narrative whose contention edges form the framework.
@@ -40,10 +46,9 @@ pub struct GradualArgumentationRequest {
     /// Which gradual semantics to run. Serde rejects unknown variants
     /// with a 422-style decode error which axum surfaces as HTTP 400.
     pub gradual_semantics: GradualSemanticsKind,
-    /// Optional t-norm override for the influence step. `None` =
-    /// canonical Gödel formula (bit-identical to the cited paper).
+    /// Optional t-norm registry name for the influence step.
     #[serde(default)]
-    pub tnorm: Option<TNormKind>,
+    pub tnorm: Option<String>,
 }
 
 /// Response body for `POST /analysis/argumentation/gradual`.
@@ -80,11 +85,19 @@ pub async fn run_gradual(
         .into_response();
     }
 
+    let tnorm = match req.tnorm.as_deref() {
+        None | Some("") => None,
+        Some(name) => match TNormRegistry::default().get(name.trim()) {
+            Ok(k) => Some(k),
+            Err(e) => return error_response(e).into_response(),
+        },
+    };
+
     let result = match run_argumentation_with_gradual(
         &state.hypergraph,
         narrative_id,
         Some(req.gradual_semantics),
-        req.tnorm,
+        tnorm,
     ) {
         Ok(r) => r,
         Err(e) => return error_response(e).into_response(),

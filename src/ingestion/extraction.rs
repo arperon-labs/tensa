@@ -498,6 +498,107 @@ pub struct ConfidenceAdjustment {
     pub reason: String,
 }
 
+/// Narrative-setting hint passed to `canonicalize_places` so the LLM can
+/// disambiguate ambiguous place names ("Marseilles" → Marseille, FR vs.
+/// Marseilles, IL) without a per-place LLM call.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct NarrativeSettingHint {
+    /// Free-form description of the narrative's setting — country, era, region.
+    /// e.g. "Early-19th-century France and Italy (Mediterranean coast)".
+    pub setting: String,
+    /// Optional ISO 3166-1 alpha-2 country code if the narrative is single-country.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub country_hint: Option<String>,
+}
+
+/// One row of the LLM's place-canonicalization response.
+/// `uuid` is opaque — the geocoder uses it to thread the result back to the
+/// originating Situation or Location entity.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlaceCanonicalization {
+    /// Echoed back verbatim from the request (entity / situation UUID as string).
+    pub uuid: String,
+    /// Echoed back verbatim from the request — the raw place string.
+    pub raw_name: String,
+    /// Modern canonical place name suitable for Nominatim ("Marseille").
+    pub canonical_name: String,
+    /// ISO 3166-1 alpha-2 country code, lowercase ("fr").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub country_code: Option<String>,
+    /// Optional admin region (state / department / oblast) for further disambiguation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub admin_region: Option<String>,
+    /// LLM self-reported confidence in the canonicalization (0..=1).
+    #[serde(default = "default_canon_confidence")]
+    pub confidence: f32,
+}
+
+fn default_canon_confidence() -> f32 {
+    0.7
+}
+
+/// Extract a JSON array (`[...]`) from a raw LLM response — handles markdown
+/// fences (```json ... ```), `<think>` blocks, and surrounding prose. Mirrors
+/// `extract_json_from_response` but for top-level arrays, which `find('{')` /
+/// `rfind('}')` would otherwise mangle.
+pub fn extract_json_array_from_response(raw: &str) -> String {
+    let cleaned = strip_thinking_tags(raw);
+    let trimmed = cleaned.trim();
+
+    if let Some(start) = trimmed.find("```json") {
+        let after = &trimmed[start + 7..];
+        if let Some(end) = after.find("```") {
+            return after[..end].trim().to_string();
+        }
+    }
+    if let Some(start) = trimmed.find("```") {
+        let after = &trimmed[start + 3..];
+        if let Some(end) = after.find("```") {
+            return after[..end].trim().to_string();
+        }
+    }
+    if let Some(start) = trimmed.find('[') {
+        if let Some(end) = trimmed.rfind(']') {
+            if end >= start {
+                return trimmed[start..=end].to_string();
+            }
+        }
+    }
+    trimmed.to_string()
+}
+
+/// Parse the LLM's canonicalize_places response into `PlaceCanonicalization` rows.
+/// On parse failure logs the raw response head + serde error via `tracing::warn!`
+/// so silent fall-through to the legacy `Geocoded` path is debuggable.
+pub fn parse_canonicalize_places_response(raw: &str) -> Result<Vec<PlaceCanonicalization>> {
+    let json_str = extract_json_array_from_response(raw);
+    match serde_json::from_str::<Vec<PlaceCanonicalization>>(&json_str) {
+        Ok(rows) => return Ok(rows),
+        Err(e) => {
+            let normalized = normalize_llm_json(&json_str);
+            if let Ok(rows) = serde_json::from_str::<Vec<PlaceCanonicalization>>(&normalized) {
+                return Ok(rows);
+            }
+            let fixed = fix_truncated_json(&normalized);
+            match serde_json::from_str::<Vec<PlaceCanonicalization>>(&fixed) {
+                Ok(rows) => return Ok(rows),
+                Err(e2) => {
+                    tracing::warn!(
+                        first_error = %e,
+                        final_error = %e2,
+                        head = %json_str.chars().take(400).collect::<String>(),
+                        "canonicalize_places parse failed — falling back to direct Nominatim"
+                    );
+                    Err(TensaError::ExtractionError(format!(
+                        "Failed to parse canonicalize_places JSON: {}",
+                        e2
+                    )))
+                }
+            }
+        }
+    }
+}
+
 /// Parse a session reconciliation response.
 pub fn parse_session_reconciliation_response(raw: &str) -> Result<SessionReconciliation> {
     let json_str = extract_json_from_response(raw);
@@ -1051,6 +1152,43 @@ pub fn validate_extraction(extraction: &NarrativeExtraction) -> Vec<ValidationWa
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse_canon_array_with_extra_fields() {
+        // Real-world shape returned by grok-4.1-fast: array with extra fields
+        // (`type`, `geo_display_name`, `latitude`…) beyond our schema. Should
+        // parse cleanly because serde ignores unknown fields by default — and
+        // the array extractor must handle the leading `[` (the legacy
+        // `extract_json_from_response` dropped the outer brackets).
+        let raw = r#"[
+          {"uuid":"abc1","raw_name":"Yanina","canonical_name":"Janina",
+           "type":"Location","geo_display_name":"Ioannina, Greece",
+           "latitude":39.66,"longitude":20.85},
+          {"uuid":"abc2","raw_name":"Catalans village","canonical_name":"Village des Catalans",
+           "country_code":"fr","admin_region":"Provence-Alpes-Côte d'Azur"}
+        ]"#;
+        let rows = parse_canonicalize_places_response(raw).expect("must parse");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].uuid, "abc1");
+        assert_eq!(rows[0].canonical_name, "Janina");
+        assert_eq!(rows[0].country_code, None);
+        assert_eq!(rows[1].country_code.as_deref(), Some("fr"));
+    }
+
+    #[test]
+    fn test_parse_canon_array_inside_markdown_fence() {
+        let raw = "Sure, here you go:\n\n```json\n[\n  {\"uuid\":\"x\",\"raw_name\":\"Marseilles\",\"canonical_name\":\"Marseille\",\"country_code\":\"fr\"}\n]\n```\n";
+        let rows = parse_canonicalize_places_response(raw).expect("must parse from fence");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].canonical_name, "Marseille");
+        assert_eq!(rows[0].country_code.as_deref(), Some("fr"));
+    }
+
+    #[test]
+    fn test_parse_canon_empty_array() {
+        let rows = parse_canonicalize_places_response("[]").expect("must parse");
+        assert_eq!(rows.len(), 0);
+    }
 
     fn sample_extraction_json() -> &'static str {
         r#"{

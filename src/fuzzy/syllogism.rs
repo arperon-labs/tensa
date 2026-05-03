@@ -57,7 +57,7 @@ use crate::fuzzy::quantifier::{self, Quantifier};
 use crate::fuzzy::tnorm::{tnorm_for, TNormKind};
 use crate::hypergraph::Hypergraph;
 use crate::store::KVStore;
-use crate::types::{Entity, EntityType};
+use crate::types::{Entity, EntityType, MaturityLevel};
 
 /// A single premise or conclusion inside a [`Syllogism`]. Shape is
 /// `<quantifier> <subject_predicate_id> IS <object_predicate_id>`.
@@ -118,9 +118,25 @@ pub trait PredicateResolver: Send + Sync {
         -> Result<Box<dyn Fn(&Entity) -> f64 + Send + Sync>>;
 }
 
-/// Default resolver: interprets `"type:<EntityType>"` ids. Any other id
-/// (and plain `"entity"` as a catch-all "everything counts") is
-/// supported; unknown ids return an [`TensaError::InvalidInput`].
+/// Default resolver. Supports the predicate forms exposed by the Studio
+/// SyllogismPanel out of the box:
+///
+/// * `entity` / `*` — every entity matches (μ = 1.0).
+/// * `type:<EntityType>` — `Actor` / `Location` / `Artifact` / `Concept` /
+///   `Organization`. Case-insensitive.
+/// * `maturity=<level>` — `Candidate` / `Reviewed` / `Validated` /
+///   `GroundTruth`. Case-insensitive.
+/// * `property:<key>=<value>` — entity's `properties[key]` equals
+///   `<value>` (string-coerced; numbers and booleans round-tripped via
+///   `to_string()`).
+/// * `confidence<op><number>` — `confidence>0.7`, `confidence<0.3`,
+///   `confidence>=0.5`, `confidence<=0.5`, `confidence=0.5`. Number must
+///   parse as `f64`; comparisons return crisp 0.0 or 1.0.
+///
+/// Unknown ids return [`TensaError::InvalidInput`] so the verifier can
+/// surface a clean 400 instead of silently returning μ = 0. Callers
+/// needing richer logic (text filters, embedding similarity, …) plug in
+/// a custom [`PredicateResolver`].
 #[derive(Debug, Default, Clone, Copy)]
 pub struct TypePredicateResolver;
 
@@ -149,12 +165,123 @@ impl PredicateResolver for TypePredicateResolver {
                 }
             }));
         }
+        if let Some(rest) = trimmed.strip_prefix("maturity=") {
+            let level = parse_maturity_level(rest.trim()).ok_or_else(|| {
+                TensaError::InvalidInput(format!(
+                    "syllogism predicate '{predicate_id}' has unknown maturity \
+                     '{rest}'; expected Candidate/Reviewed/Validated/GroundTruth",
+                ))
+            })?;
+            return Ok(Box::new(move |e: &Entity| -> f64 {
+                if e.maturity == level {
+                    1.0
+                } else {
+                    0.0
+                }
+            }));
+        }
+        if let Some(rest) = trimmed.strip_prefix("property:") {
+            let (key, value) = rest.split_once('=').ok_or_else(|| {
+                TensaError::InvalidInput(format!(
+                    "syllogism predicate '{predicate_id}' missing '=' separator; \
+                     expected 'property:<key>=<value>'",
+                ))
+            })?;
+            let key = key.trim().to_string();
+            let value = value.trim().to_string();
+            if key.is_empty() {
+                return Err(TensaError::InvalidInput(format!(
+                    "syllogism predicate '{predicate_id}' has empty property key",
+                )));
+            }
+            return Ok(Box::new(move |e: &Entity| -> f64 {
+                let matched = e
+                    .properties
+                    .get(&key)
+                    .map(|v| match v {
+                        serde_json::Value::String(s) => s == &value,
+                        serde_json::Value::Null => value.is_empty(),
+                        other => other.to_string().trim_matches('"') == value,
+                    })
+                    .unwrap_or(false);
+                if matched {
+                    1.0
+                } else {
+                    0.0
+                }
+            }));
+        }
+        if let Some((op, threshold)) = parse_confidence_op(trimmed) {
+            // Compare in f32 space so the user-supplied threshold (parsed
+            // as f64 from the DSL) and the entity's f32 confidence agree
+            // on values like 0.9 / 0.7 — which round-trip exactly through
+            // f32 but accumulate ε after promotion to f64.
+            let threshold = threshold as f32;
+            return Ok(Box::new(move |e: &Entity| -> f64 {
+                let c = e.confidence;
+                let hit = match op {
+                    CmpOp::Gt => c > threshold,
+                    CmpOp::Lt => c < threshold,
+                    CmpOp::Ge => c >= threshold,
+                    CmpOp::Le => c <= threshold,
+                    CmpOp::Eq => (c - threshold).abs() < 1e-6,
+                };
+                if hit {
+                    1.0
+                } else {
+                    0.0
+                }
+            }));
+        }
         Err(TensaError::InvalidInput(format!(
             "unknown predicate id '{predicate_id}'; default resolver supports \
-             'type:<EntityType>' or 'entity'/'*'. Plug a custom PredicateResolver \
-             for domain-specific predicates.",
+             'type:<EntityType>', 'maturity=<level>', 'property:<key>=<value>', \
+             'confidence<op><number>' (op ∈ >, <, >=, <=, =), and 'entity'/'*'. \
+             Plug a custom PredicateResolver for domain-specific predicates.",
         )))
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum CmpOp {
+    Gt,
+    Lt,
+    Ge,
+    Le,
+    Eq,
+}
+
+fn parse_maturity_level(s: &str) -> Option<MaturityLevel> {
+    match s.to_lowercase().as_str() {
+        "candidate" => Some(MaturityLevel::Candidate),
+        "reviewed" => Some(MaturityLevel::Reviewed),
+        "validated" => Some(MaturityLevel::Validated),
+        "groundtruth" | "ground_truth" | "ground-truth" => {
+            Some(MaturityLevel::GroundTruth)
+        }
+        _ => None,
+    }
+}
+
+/// Parse `confidence<op><number>` into `(op, threshold)`. Two-char
+/// operators (`>=`, `<=`) are checked before single-char ones so
+/// `confidence>=0.7` doesn't fall through to the `>` branch.
+fn parse_confidence_op(s: &str) -> Option<(CmpOp, f64)> {
+    let rest = s.strip_prefix("confidence")?;
+    let (op, num) = if let Some(r) = rest.strip_prefix(">=") {
+        (CmpOp::Ge, r)
+    } else if let Some(r) = rest.strip_prefix("<=") {
+        (CmpOp::Le, r)
+    } else if let Some(r) = rest.strip_prefix('>') {
+        (CmpOp::Gt, r)
+    } else if let Some(r) = rest.strip_prefix('<') {
+        (CmpOp::Lt, r)
+    } else if let Some(r) = rest.strip_prefix('=') {
+        (CmpOp::Eq, r)
+    } else {
+        return None;
+    };
+    num.trim().parse::<f64>().ok().map(|n| (op, n))
 }
 
 /// Classify a syllogism into one of the 5 Peterson canonical figures

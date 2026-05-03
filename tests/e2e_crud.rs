@@ -400,6 +400,7 @@ fn test_situation_with_spatial() {
         location_entity: None,
         location_name: None,
         description: Some("Kyiv outskirts".into()),
+        geo_provenance: Some(tensa::types::GeoProvenance::Source),
     });
     let id = hg.create_situation(sit).unwrap();
 

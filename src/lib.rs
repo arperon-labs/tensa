@@ -13,6 +13,7 @@ pub mod fuzzy;
 #[cfg(feature = "generation")]
 pub mod generation;
 pub mod hypergraph;
+pub mod images;
 pub mod inference;
 pub mod ingestion;
 #[cfg(feature = "mcp")]

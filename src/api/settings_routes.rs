@@ -25,6 +25,19 @@ const CFG_INFERENCE_KEY: &[u8] = b"cfg/inference";
 const CFG_RAG_KEY: &[u8] = b"cfg/rag";
 /// KV key for persisted inference/RAG LLM config.
 pub const CFG_INFERENCE_LLM_KEY: &[u8] = b"cfg/inference_llm";
+/// KV key for persisted image-generation provider config.
+pub const CFG_IMAGE_GEN_KEY: &[u8] = b"cfg/image_gen";
+
+/// Load persisted image-gen config from KV store (if any).
+pub fn load_persisted_image_gen_config(
+    store: &dyn crate::store::KVStore,
+) -> Option<crate::images::ImageGenConfig> {
+    store
+        .get(CFG_IMAGE_GEN_KEY)
+        .ok()
+        .flatten()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+}
 
 /// Load persisted ingestion config from KV store (if any).
 pub fn load_persisted_ingestion_config(

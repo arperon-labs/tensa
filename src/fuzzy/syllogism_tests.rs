@@ -432,6 +432,216 @@ fn test_parse_statement_and_classify_figure() {
     assert_eq!(classify_figure(&noncanon), "non-canonical");
 }
 
+// ── T12: Default resolver — extended predicate forms ───────────────────────
+//
+// Pins the predicate-form contract advertised by the Studio
+// SyllogismPanel (property: / maturity= / confidence<op>). Each form
+// gets a dedicated assertion against a small fixture that includes
+// both matching and non-matching entities, so a regression that drops
+// one form is caught.
+
+fn mint_full_entity(
+    hg: &Hypergraph,
+    nid: &str,
+    et: EntityType,
+    maturity: MaturityLevel,
+    confidence: f32,
+    extra_props: serde_json::Value,
+) -> Uuid {
+    let id = Uuid::now_v7();
+    let mut props = serde_json::json!({"name": format!("{:?}-{:?}", et, maturity)});
+    if let serde_json::Value::Object(extra) = extra_props {
+        if let serde_json::Value::Object(base) = &mut props {
+            for (k, v) in extra {
+                base.insert(k, v);
+            }
+        }
+    }
+    let e = Entity {
+        id,
+        entity_type: et,
+        properties: props,
+        beliefs: None,
+        embedding: None,
+        confidence_breakdown: None,
+        confidence,
+        maturity,
+        narrative_id: Some(nid.into()),
+        provenance: vec![],
+        extraction_method: None,
+        deleted_at: None,
+        transaction_time: None,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    };
+    hg.create_entity(e).expect("create_entity");
+    id
+}
+
+#[test]
+fn test_default_resolver_extended_predicate_forms() {
+    let hg = make_hg();
+    let nid = "extended-resolver";
+    // 3 protagonists (one is GroundTruth, the others Candidate),
+    // 2 antagonists (Reviewed), 1 location.
+    mint_full_entity(
+        &hg,
+        nid,
+        EntityType::Actor,
+        MaturityLevel::Candidate,
+        0.9,
+        serde_json::json!({"role": "protagonist"}),
+    );
+    mint_full_entity(
+        &hg,
+        nid,
+        EntityType::Actor,
+        MaturityLevel::Candidate,
+        0.85,
+        serde_json::json!({"role": "protagonist"}),
+    );
+    mint_full_entity(
+        &hg,
+        nid,
+        EntityType::Actor,
+        MaturityLevel::GroundTruth,
+        0.95,
+        serde_json::json!({"role": "protagonist"}),
+    );
+    mint_full_entity(
+        &hg,
+        nid,
+        EntityType::Actor,
+        MaturityLevel::Reviewed,
+        0.4,
+        serde_json::json!({"role": "antagonist"}),
+    );
+    mint_full_entity(
+        &hg,
+        nid,
+        EntityType::Actor,
+        MaturityLevel::Reviewed,
+        0.45,
+        serde_json::json!({"role": "antagonist"}),
+    );
+    mint_full_entity(
+        &hg,
+        nid,
+        EntityType::Location,
+        MaturityLevel::Candidate,
+        0.5,
+        serde_json::json!({}),
+    );
+
+    let entities = hg.list_entities_by_narrative(nid).expect("list");
+    let mu = |id: &str| -> Vec<f64> {
+        let f = TypePredicateResolver
+            .resolve(id)
+            .unwrap_or_else(|e| panic!("resolve('{id}') failed: {e}"));
+        entities.iter().map(|e| f(e)).collect()
+    };
+
+    // property:role=protagonist → 3 hits.
+    let hits_protag = mu("property:role=protagonist").iter().sum::<f64>();
+    assert!(
+        (hits_protag - 3.0).abs() < 1e-9,
+        "expected 3 protagonists, got {hits_protag}",
+    );
+
+    // maturity=Candidate → 3 hits (2 protagonists + 1 location).
+    let hits_cand = mu("maturity=Candidate").iter().sum::<f64>();
+    assert!(
+        (hits_cand - 3.0).abs() < 1e-9,
+        "expected 3 Candidate entities, got {hits_cand}",
+    );
+
+    // maturity=GroundTruth → 1 hit. Also exercise ground_truth alias.
+    assert!(
+        (mu("maturity=GroundTruth").iter().sum::<f64>() - 1.0).abs() < 1e-9
+    );
+    assert!(
+        (mu("maturity=ground_truth").iter().sum::<f64>() - 1.0).abs() < 1e-9
+    );
+
+    // confidence>0.7 → 3 hits (the three protagonists 0.9/0.85/0.95).
+    let hits_high = mu("confidence>0.7").iter().sum::<f64>();
+    assert!(
+        (hits_high - 3.0).abs() < 1e-9,
+        "expected 3 high-confidence entities, got {hits_high}",
+    );
+
+    // confidence<0.5 → 2 hits (the two antagonists 0.4 and 0.45).
+    let hits_low = mu("confidence<0.5").iter().sum::<f64>();
+    assert!(
+        (hits_low - 2.0).abs() < 1e-9,
+        "expected 2 low-confidence entities, got {hits_low}",
+    );
+
+    // confidence>=0.9 → 2 hits (0.9 and 0.95).
+    let hits_ge = mu("confidence>=0.9").iter().sum::<f64>();
+    assert!(
+        (hits_ge - 2.0).abs() < 1e-9,
+        "expected 2 entities with confidence>=0.9, got {hits_ge}",
+    );
+
+    // Unknown ids still error with the structured message.
+    match TypePredicateResolver.resolve("foo:bar=baz") {
+        Ok(_) => panic!("unknown predicate must error"),
+        Err(e) => {
+            let msg = format!("{e}");
+            assert!(
+                msg.contains("unknown predicate id") && msg.contains("property:"),
+                "error message should advertise supported forms; got {msg}",
+            );
+        }
+    }
+
+    // Malformed property predicate (missing '=') errors cleanly.
+    assert!(TypePredicateResolver.resolve("property:role").is_err());
+    // Empty property key errors cleanly.
+    assert!(TypePredicateResolver.resolve("property:=foo").is_err());
+    // Non-numeric confidence threshold falls through to "unknown".
+    assert!(TypePredicateResolver.resolve("confidence>abc").is_err());
+}
+
+#[test]
+fn test_default_resolver_panel_example_runs_e2e() {
+    // Exercises the exact statement strings the SyllogismPanel ships
+    // as its "Figure I — All Actors are agents" starter example.
+    // Pre-fix this returned HTTP 400; post-fix it must verify cleanly.
+    let hg = make_hg();
+    let nid = "panel-example-figI";
+    for _ in 0..3 {
+        mint_full_entity(
+            &hg,
+            nid,
+            EntityType::Actor,
+            MaturityLevel::Candidate,
+            0.9,
+            serde_json::json!({"role": "protagonist"}),
+        );
+    }
+    let major = parse_statement("ALL type:Actor IS type:Actor").unwrap();
+    let minor =
+        parse_statement("ALL property:role=protagonist IS type:Actor").unwrap();
+    let conclusion =
+        parse_statement("ALL property:role=protagonist IS type:Actor").unwrap();
+    let s = Syllogism {
+        major,
+        minor,
+        conclusion,
+        figure_hint: None,
+    };
+    let gv = verify(&hg, nid, &s, TNormKind::Godel, 0.5, &TypePredicateResolver)
+        .expect("panel starter syllogism must verify");
+    assert!(
+        gv.degree > 0.99,
+        "expected near-1.0 degree on uniform fixture, got {}",
+        gv.degree
+    );
+    assert!(gv.valid);
+}
+
 // Dummy check: GradedValidity shape used by callers is stable.
 #[test]
 fn test_graded_validity_serde_shape() {

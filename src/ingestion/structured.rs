@@ -257,6 +257,7 @@ pub fn process_structured_import(
                     location_entity: None,
                     location_name: Some(loc.clone()),
                     description: Some(loc.clone()),
+                    geo_provenance: None,
                 });
                 let situation = Situation {
                     id,

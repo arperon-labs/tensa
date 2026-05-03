@@ -522,6 +522,42 @@ pub fn export_archive(
                 }
             }
         }
+
+        // ── Images layer — actor portraits ───────────────────
+        // Bytes go to `narratives/{nid}/images/{image_id}.{ext}`; an index
+        // file at `narratives/{nid}/images/index.json` keeps the metadata
+        // (mime, source, prompt, style, …). Importer reads both.
+        if opts.include_images {
+            if let Ok(records) = crate::images::list_narrative_images(&*store, nar_id) {
+                if !records.is_empty() {
+                    layers.images = true;
+                    let mut index = Vec::with_capacity(records.len());
+                    for rec in &records {
+                        if let Ok(Some(bytes)) =
+                            crate::images::load_image_bytes(&*store, &rec.id)
+                        {
+                            let ext = mime_to_ext(&rec.mime);
+                            let bin_path =
+                                format!("{prefix}images/{}.{ext}", rec.id);
+                            write_bin(&mut zip, &file_opts, &bin_path, &bytes)?;
+                            index.push(serde_json::json!({
+                                "record": rec,
+                                "file": format!("{}.{ext}", rec.id),
+                            }));
+                        }
+                    }
+                    if !index.is_empty() {
+                        write_json(
+                            &mut zip,
+                            &file_opts,
+                            &format!("{prefix}images/index.json"),
+                            &index,
+                            opts.pretty,
+                        )?;
+                    }
+                }
+            }
+        }
     }
 
     // ── Taxonomy layer ───────────────────────────────────────
@@ -622,6 +658,20 @@ fn write_bin(
     zip.write_all(data)
         .map_err(|e| TensaError::ExportError(format!("ZIP write {path}: {e}")))?;
     Ok(())
+}
+
+/// Map an `image/<x>` mime to a sensible file extension. Defaults to `bin`
+/// for unknown mimes — the importer reads `mime` from the index, not the
+/// extension, so a misnamed file still round-trips.
+fn mime_to_ext(mime: &str) -> &'static str {
+    match mime.to_ascii_lowercase().as_str() {
+        "image/png" => "png",
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/webp" => "webp",
+        "image/gif" => "gif",
+        "image/bmp" => "bmp",
+        _ => "bin",
+    }
 }
 
 /// Helper: serialize a value as JSON and write it to the ZIP.
@@ -830,6 +880,7 @@ mod tests {
             include_workshop_reports: false,
             include_narrative_plan: false,
             include_analysis_status: false,
+            include_images: false,
             pretty: false,
             include_synthetic: false,
         };

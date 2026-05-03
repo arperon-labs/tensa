@@ -241,6 +241,7 @@ mod tests {
             location_entity: None,
             location_name: Some("St. Petersburg".to_string()),
             description: Some("St. Petersburg".to_string()),
+            geo_provenance: Some(crate::types::GeoProvenance::Source),
         });
         sit.game_structure = Some(GameStructure {
             game_type: GameClassification::AsymmetricInformation,
@@ -395,6 +396,7 @@ mod tests {
             location_entity: None,
             location_name: Some("Moscow".to_string()),
             description: Some("Moscow".to_string()),
+            geo_provenance: Some(crate::types::GeoProvenance::Source),
         });
         let id = hg.create_situation(sit).unwrap();
         let retrieved = hg.get_situation(&id).unwrap();

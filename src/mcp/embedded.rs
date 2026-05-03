@@ -466,6 +466,21 @@ impl McpBackend for EmbeddedBackend {
         self.update_entity_impl(id, updates).await
     }
 
+    async fn update_situation(&self, id: &str, updates: Value) -> Result<Value> {
+        self.update_situation_impl(id, updates).await
+    }
+
+    async fn update_participation(
+        &self,
+        situation_id: &str,
+        entity_id: &str,
+        seq: u16,
+        updates: Value,
+    ) -> Result<Value> {
+        self.update_participation_impl(situation_id, entity_id, seq, updates)
+            .await
+    }
+
     async fn list_entities(
         &self,
         entity_type: Option<&str>,

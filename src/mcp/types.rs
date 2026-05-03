@@ -319,6 +319,38 @@ pub struct UpdateEntityRequest {
     pub updates: serde_json::Value,
 }
 
+/// Parameters for the `update_situation` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateSituationRequest {
+    /// UUID of the situation to update.
+    pub id: String,
+    /// JSON object with fields to update. Supports: `properties` (merged into existing),
+    /// `name`, `description`, `confidence` (0..1), `narrative_id`, `synopsis`, `label`,
+    /// `status`, `keywords` (array of strings), and Sprint P4.2 enrichment slots
+    /// `game_structure`, `deterministic`, `probabilistic`, `temporal` (each accepts
+    /// either an object to set or `null` to clear).
+    pub updates: serde_json::Value,
+}
+
+/// Parameters for the `update_participation` tool (Sprint P4.2 retro-enrichment).
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateParticipationRequest {
+    /// UUID of the situation the participation belongs to.
+    pub situation_id: String,
+    /// UUID of the entity participating in the situation.
+    pub entity_id: String,
+    /// Sequence number for multi-role participations (default 0).
+    #[serde(default)]
+    pub seq: u16,
+    /// JSON object with fields to update. Supports: `info_set` (object with
+    /// `knows_before`, `learns`, `reveals`, `beliefs_about_others`), `payoff`
+    /// (any JSON value), `action` (string or null), `role` (one of Protagonist
+    /// / Antagonist / Witness / Target / Instrument / Confidant / Informant /
+    /// Recipient / Bystander / SubjectOfDiscussion). Use `null` on info_set
+    /// or payoff to clear.
+    pub updates: serde_json::Value,
+}
+
 /// Parameters for the `list_entities` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ListEntitiesRequest {

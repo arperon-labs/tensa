@@ -383,6 +383,25 @@ impl McpBackend for HttpBackend {
         self.put_json(&format!("/entities/{}", id), &updates).await
     }
 
+    async fn update_situation(&self, id: &str, updates: Value) -> Result<Value> {
+        self.put_json(&format!("/situations/{}", id), &updates)
+            .await
+    }
+
+    async fn update_participation(
+        &self,
+        situation_id: &str,
+        entity_id: &str,
+        seq: u16,
+        updates: Value,
+    ) -> Result<Value> {
+        self.put_json(
+            &format!("/situations/{situation_id}/participants/{entity_id}/{seq}"),
+            &updates,
+        )
+        .await
+    }
+
     async fn list_entities(
         &self,
         entity_type: Option<&str>,

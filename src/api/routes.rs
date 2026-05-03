@@ -791,6 +791,16 @@ pub struct SituationPatch {
     pub spatial: Option<Option<SpatialAnchor>>,
     #[serde(default, deserialize_with = "deserialize_optional_option")]
     pub discourse: Option<Option<DiscourseAnnotation>>,
+    /// Sprint P4.2 enrichment field: game-theoretic frame for the scene.
+    /// `Some(Some(_))` sets, `Some(None)` clears, `None` preserves.
+    #[serde(default, deserialize_with = "deserialize_optional_option")]
+    pub game_structure: Option<Option<GameStructure>>,
+    /// Sprint P4.2 enrichment: factual / known-deterministic content.
+    #[serde(default, deserialize_with = "deserialize_optional_option")]
+    pub deterministic: Option<Option<serde_json::Value>>,
+    /// Sprint P4.2 enrichment: uncertain / probabilistic outcomes.
+    #[serde(default, deserialize_with = "deserialize_optional_option")]
+    pub probabilistic: Option<Option<serde_json::Value>>,
     // Writer scene-schema fields (Sprint W7)
     #[serde(default, deserialize_with = "deserialize_optional_option")]
     pub synopsis: Option<Option<String>>,
@@ -804,6 +814,11 @@ pub struct SituationPatch {
     pub status: Option<Option<String>>,
     #[serde(default)]
     pub keywords: Option<Vec<String>>,
+    /// Free-form properties patch (object). Merged into the existing
+    /// `Situation.properties` JSON Value (existing keys overwritten, others
+    /// preserved). Other Situation primitive fields use the typed slots above.
+    #[serde(default)]
+    pub properties: Option<serde_json::Value>,
 }
 
 /// Distinguishes "field omitted" from "field set to null". Needed because serde's
@@ -916,6 +931,15 @@ pub async fn update_situation(
         if let Some(discourse) = patch.discourse {
             s.discourse = discourse;
         }
+        if let Some(game_structure) = patch.game_structure {
+            s.game_structure = game_structure;
+        }
+        if let Some(deterministic) = patch.deterministic {
+            s.deterministic = deterministic;
+        }
+        if let Some(probabilistic) = patch.probabilistic {
+            s.probabilistic = probabilistic;
+        }
         if let Some(synopsis) = patch.synopsis {
             s.synopsis = synopsis;
         }
@@ -933,6 +957,18 @@ pub async fn update_situation(
         }
         if let Some(keywords) = patch.keywords {
             s.keywords = keywords;
+        }
+        if let Some(props_patch) = patch.properties {
+            if let Some(obj) = props_patch.as_object() {
+                if !s.properties.is_object() {
+                    s.properties = serde_json::Value::Object(serde_json::Map::new());
+                }
+                if let Some(existing) = s.properties.as_object_mut() {
+                    for (k, v) in obj {
+                        existing.insert(k.clone(), v.clone());
+                    }
+                }
+            }
         }
     }) {
         Ok(sit) => json_ok(&sit),
@@ -994,6 +1030,71 @@ pub async fn get_participants(
 ) -> impl IntoResponse {
     match state.hypergraph.get_participants_for_situation(&id) {
         Ok(participants) => json_ok(&participants),
+        Err(e) => error_response(e).into_response(),
+    }
+}
+
+/// Patch shape for PUT /situations/:sid/participants/:eid/:seq.
+/// Sprint P4.2 retro-enrichment: lets a caller fill in `info_set`, `payoff`,
+/// `action`, or `role` on an existing participation without re-creating it.
+/// Each field uses the `Some(Some(_))` set / `Some(None)` clear / `None` preserve
+/// pattern documented on `SituationPatch`.
+#[derive(Deserialize, Default)]
+pub struct ParticipationPatch {
+    #[serde(default, deserialize_with = "deserialize_optional_option")]
+    pub info_set: Option<Option<InfoSet>>,
+    #[serde(default, deserialize_with = "deserialize_optional_option")]
+    pub payoff: Option<Option<serde_json::Value>>,
+    #[serde(default, deserialize_with = "deserialize_optional_option")]
+    pub action: Option<Option<String>>,
+    #[serde(default)]
+    pub role: Option<Role>,
+}
+
+/// PUT /situations/:sid/participants/:eid/:seq — Update a participation in place.
+///
+/// Sprint P4.2 retro-enrichment endpoint: lets a script (or the
+/// `tensa-narrative-llm` skill's `enrichment-backfill` analysis-type) populate
+/// `info_set` (knows_before / learns / reveals / beliefs_about_others) and
+/// `payoff` on participations from archive imports that skipped the enrichment
+/// pass. Without this surface, `Participation.info_set` and `payoff` could only
+/// be set at create-time, leaving the StyleProfile axes (Info R₀, Power
+/// Asymmetry, Deception, Late Revelation) permanently zeroed for those imports.
+pub async fn update_participation(
+    State(state): State<Arc<AppState>>,
+    Path((situation_id, entity_id, seq)): Path<(Uuid, Uuid, u16)>,
+    Json(patch): Json<ParticipationPatch>,
+) -> impl IntoResponse {
+    let pairs = match state
+        .hypergraph
+        .get_participations_for_pair(&entity_id, &situation_id)
+    {
+        Ok(p) => p,
+        Err(e) => return error_response(e).into_response(),
+    };
+    let mut existing = match pairs.into_iter().find(|p| p.seq == seq) {
+        Some(p) => p,
+        None => {
+            return error_response(TensaError::NotFound(format!(
+                "participation (situation={situation_id}, entity={entity_id}, seq={seq}) not found"
+            )))
+            .into_response()
+        }
+    };
+    if let Some(info_set) = patch.info_set {
+        existing.info_set = info_set;
+    }
+    if let Some(payoff) = patch.payoff {
+        existing.payoff = payoff;
+    }
+    if let Some(action) = patch.action {
+        existing.action = action;
+    }
+    if let Some(role) = patch.role {
+        existing.role = role;
+    }
+    match state.hypergraph.update_participation(&existing) {
+        Ok(()) => json_ok(&existing),
         Err(e) => error_response(e).into_response(),
     }
 }
@@ -4102,15 +4203,14 @@ pub async fn analyze_narrative(
         );
     }
 
-    // ── Advanced: simulation (Low priority, LLM-heavy) ──
-    if tier("advanced") && !situations.is_empty() {
-        submit(
-            InferenceJobType::NarrativeSimulation,
-            first_situation_id,
-            JobPriority::Low,
-            narrative_params.clone(),
-        );
-    }
+    // ── NarrativeSimulation: NOT submitted from bulk-analyze ──
+    // The engine materialises forward-play "Simulation turn N" Scene situations
+    // into the hypergraph (extraction_method = Simulated, confidence = 0.5),
+    // which pollutes the canonical narrative graph and re-runs of bulk-analyze
+    // duplicate the synthetic rows. Studio filters them at render-time, but
+    // the cleaner fix is to keep them out of the bulk path entirely. Callers
+    // who actually want a forward simulation submit the job explicitly:
+    //   POST /jobs {"job_type":"NarrativeSimulation","target_id":"<sit-uuid>"}
 
     let count = submitted.len();
     Json(serde_json::json!({
@@ -5101,6 +5201,18 @@ pub struct GeocodeRequest {
 #[derive(Deserialize)]
 pub struct GeocodeBackfillRequest {
     pub narrative_id: Option<String>,
+    /// Free-form setting hint for LLM canonicalization
+    /// (e.g. "Early-19th-century France and Italy"). Falls back to the narrative's
+    /// description + genre if omitted.
+    #[serde(default)]
+    pub setting: Option<String>,
+    /// Default ISO 3166-1 alpha-2 country code if the narrative is single-country.
+    #[serde(default)]
+    pub country_hint: Option<String>,
+    /// Skip LLM canonicalization entirely. Use when an extractor is configured but
+    /// you specifically want a direct Nominatim lookup (provenance: `geocoded`).
+    #[serde(default)]
+    pub skip_canonicalization: bool,
 }
 
 /// POST /geocode — Geocode a single place name to coordinates.
@@ -5119,7 +5231,167 @@ pub async fn geocode_place(
     }
 }
 
+/// Body for `POST /geocode/canonicalize-debug`.
+#[derive(Deserialize)]
+pub struct CanonicalizeDebugRequest {
+    pub setting: String,
+    #[serde(default)]
+    pub country_hint: Option<String>,
+    pub places: Vec<String>,
+}
+
+/// POST /geocode/canonicalize-batch-debug — Diagnostic: run the full
+/// `Geocoder::canonicalize_places_batch` pipeline against the actual Location
+/// entities of a narrative. Returns the resulting (raw → canonicalization) map
+/// + a list of entities whose normalized raw name was NOT in the map. The
+/// "missing" list is the exact set that would silently fall through to the
+/// `Geocoded` provenance path during a real backfill.
+pub async fn geocode_canonicalize_batch_debug(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<GeocodeBackfillRequest>,
+) -> impl IntoResponse {
+    let Some(nid) = body.narrative_id.as_deref() else {
+        return error_response(crate::error::TensaError::InvalidInput(
+            "narrative_id is required".into(),
+        ))
+        .into_response();
+    };
+
+    let entities = state
+        .hypergraph
+        .list_entities_by_type(&crate::types::EntityType::Location)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|e| e.narrative_id.as_deref() == Some(nid))
+        .collect::<Vec<_>>();
+
+    let to_resolve: Vec<(uuid::Uuid, String)> = entities
+        .iter()
+        .filter_map(|e| {
+            let name = e.properties.get("name").and_then(|v| v.as_str())?;
+            if name.is_empty() {
+                return None;
+            }
+            Some((e.id, name.to_string()))
+        })
+        .collect();
+
+    let extractor = match state.inference_extractor.read().ok().and_then(|g| g.clone()) {
+        Some(e) => e,
+        None => match state.extractor.read().ok().and_then(|g| g.clone()) {
+            Some(e) => e,
+            None => {
+                return json_ok(&serde_json::json!({
+                    "extractor_configured": false,
+                    "candidates": to_resolve.len(),
+                }))
+            }
+        },
+    };
+
+    let setting = crate::ingestion::extraction::NarrativeSettingHint {
+        setting: body.setting.clone().unwrap_or_default(),
+        country_hint: body.country_hint.clone(),
+    };
+
+    let canon_map = state
+        .geocoder
+        .debug_canonicalize_places_batch(nid, &setting, extractor.as_ref(), &to_resolve)
+        .await;
+
+    let mut missing = Vec::new();
+    for (eid, raw) in &to_resolve {
+        let normalized_raw = raw.trim().to_lowercase();
+        if !canon_map.contains_key(&normalized_raw) {
+            missing.push(serde_json::json!({
+                "entity_id": eid.to_string(),
+                "raw_name": raw,
+                "normalized_raw": normalized_raw,
+            }));
+        }
+    }
+
+    let canon_list: Vec<serde_json::Value> = canon_map
+        .iter()
+        .map(|(k, c)| {
+            serde_json::json!({
+                "lookup_key": k,
+                "raw_name": c.raw_name,
+                "canonical_name": c.canonical_name,
+                "country_code": c.country_code,
+                "confidence": c.confidence,
+            })
+        })
+        .collect();
+
+    json_ok(&serde_json::json!({
+        "extractor_configured": true,
+        "model": extractor.model_name(),
+        "candidates": to_resolve.len(),
+        "canon_map_size": canon_map.len(),
+        "missing_count": missing.len(),
+        "canon_rows": canon_list,
+        "missing": missing,
+    }))
+}
+
+/// POST /geocode/canonicalize-debug — Diagnostic: run `canonicalize_places` for
+/// a handful of raw place strings and return the LLM-resolved rows directly.
+///
+/// Bypasses the geocoder entirely; useful to confirm the extractor is configured
+/// and the LLM is producing parseable output before running a full backfill.
+pub async fn geocode_canonicalize_debug(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<CanonicalizeDebugRequest>,
+) -> impl IntoResponse {
+    if body.places.is_empty() {
+        return json_ok(&serde_json::json!({"rows": [], "extractor_configured": false, "note": "empty places"}));
+    }
+    let extractor: Option<Arc<dyn crate::ingestion::llm::NarrativeExtractor>> = {
+        let inf = state.inference_extractor.read().ok().and_then(|g| g.clone());
+        match inf {
+            Some(e) => Some(e),
+            None => state.extractor.read().ok().and_then(|g| g.clone()),
+        }
+    };
+    let extractor_configured = extractor.is_some();
+    let Some(extractor) = extractor else {
+        return json_ok(&serde_json::json!({
+            "rows": [],
+            "extractor_configured": false,
+            "note": "no LLM extractor configured (set /settings/inference-llm or /settings/llm)",
+        }));
+    };
+    let setting = crate::ingestion::extraction::NarrativeSettingHint {
+        setting: body.setting.clone(),
+        country_hint: body.country_hint.clone(),
+    };
+    let pairs: Vec<(String, String)> = body
+        .places
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (format!("dbg-{}", i), p.clone()))
+        .collect();
+    let rows_result = extractor.canonicalize_places(&setting, &pairs);
+    match rows_result {
+        Ok(rows) => json_ok(&serde_json::json!({
+            "rows": rows,
+            "requested": body.places.len(),
+            "returned": rows.len(),
+            "extractor_configured": extractor_configured,
+            "model": extractor.model_name(),
+        })),
+        Err(e) => error_response(e).into_response(),
+    }
+}
+
 /// POST /geocode/backfill — Batch-geocode situations and entities missing coordinates.
+///
+/// When a narrative_id and a configured LLM extractor are both available (and
+/// `skip_canonicalization` is false), runs a one-shot batch canonicalization
+/// pass to disambiguate ambiguous place names ("Marseilles" → Marseille, FR)
+/// before Nominatim lookups. Each result records `geo_provenance` so the caller
+/// can tell hard-fact from inferred coordinates.
 pub async fn geocode_backfill(
     State(state): State<Arc<AppState>>,
     Json(body): Json<GeocodeBackfillRequest>,
@@ -5144,9 +5416,67 @@ pub async fn geocode_backfill(
         .list_entities_by_type(&crate::types::EntityType::Location)
         .unwrap_or_default();
 
+    // Build the optional NarrativeSettingHint by combining body overrides with
+    // the narrative's description/genre, when available.
+    let setting_hint = if body.skip_canonicalization {
+        None
+    } else if let Some(ref nid) = body.narrative_id {
+        let setting_text = if let Some(ref s) = body.setting {
+            s.clone()
+        } else {
+            let registry = crate::narrative::registry::NarrativeRegistry::new(
+                state.hypergraph.store_arc(),
+            );
+            match registry.get(nid) {
+                Ok(narr) => {
+                    let mut parts: Vec<String> = Vec::new();
+                    if let Some(d) = narr.description.as_ref() {
+                        if !d.trim().is_empty() {
+                            parts.push(d.clone());
+                        }
+                    }
+                    if let Some(g) = narr.genre.as_ref() {
+                        if !g.trim().is_empty() {
+                            parts.push(format!("Genre: {}", g));
+                        }
+                    }
+                    parts.join(" — ")
+                }
+                _ => String::new(),
+            }
+        };
+        Some(crate::ingestion::extraction::NarrativeSettingHint {
+            setting: setting_text,
+            country_hint: body.country_hint.clone(),
+        })
+    } else {
+        None
+    };
+
+    // Resolve the LLM extractor preferring inference over ingestion
+    // (canonicalization is a query-shaped task, cheaper LLM is fine).
+    let extractor: Option<Arc<dyn crate::ingestion::llm::NarrativeExtractor>> =
+        if body.skip_canonicalization {
+            None
+        } else {
+            let inf = state.inference_extractor.read().ok().and_then(|g| g.clone());
+            match inf {
+                Some(e) => Some(e),
+                None => state.extractor.read().ok().and_then(|g| g.clone()),
+            }
+        };
+    let extractor_ref: Option<&dyn crate::ingestion::llm::NarrativeExtractor> =
+        extractor.as_deref().map(|e| e as _);
+
     let sit_count = match state
         .geocoder
-        .geocode_situations(&state.hypergraph, situations)
+        .geocode_situations_with_canon(
+            &state.hypergraph,
+            situations,
+            body.narrative_id.as_deref(),
+            setting_hint.as_ref(),
+            extractor_ref,
+        )
         .await
     {
         Ok(n) => n,
@@ -5154,7 +5484,13 @@ pub async fn geocode_backfill(
     };
     let ent_count = match state
         .geocoder
-        .geocode_location_entities(&state.hypergraph, entities)
+        .geocode_location_entities_with_canon(
+            &state.hypergraph,
+            entities,
+            body.narrative_id.as_deref(),
+            setting_hint.as_ref(),
+            extractor_ref,
+        )
         .await
     {
         Ok(n) => n,
@@ -5165,6 +5501,7 @@ pub async fn geocode_backfill(
         "situations_geocoded": sit_count,
         "entities_geocoded": ent_count,
         "total_updated": sit_count + ent_count,
+        "canonicalization_used": setting_hint.is_some() && extractor.is_some(),
     }))
 }
 
@@ -5219,10 +5556,15 @@ pub async fn embedding_backfill(
             .unwrap_or_default()
     };
 
-    // Filter and collect texts for entities
-    let mut ent_ids = Vec::new();
-    let mut ent_texts = Vec::new();
+    // Per-row error counters and error log (capped to keep response small).
     let mut skipped: usize = 0;
+    let mut empty_skipped: usize = 0;
+    let mut failed: usize = 0;
+    let mut errors: Vec<serde_json::Value> = Vec::new();
+    const MAX_ERRORS: usize = 50;
+
+    // Build (id, text) pairs for entities that need embedding. Trim and drop empties.
+    let mut ent_jobs: Vec<(uuid::Uuid, String)> = Vec::new();
     for e in &entities {
         if !body.force && e.embedding.is_some() {
             skipped += 1;
@@ -5232,80 +5574,118 @@ pub async fn embedding_backfill(
             .properties
             .get("name")
             .and_then(|v| v.as_str())
-            .unwrap_or_else(|| e.entity_type.as_index_str());
-        ent_ids.push(e.id);
-        ent_texts.push(text.to_string());
+            .unwrap_or_else(|| e.entity_type.as_index_str())
+            .trim()
+            .to_string();
+        if text.is_empty() {
+            empty_skipped += 1;
+            continue;
+        }
+        ent_jobs.push((e.id, text));
     }
 
-    // Filter and collect texts for situations
-    let mut sit_ids = Vec::new();
-    let mut sit_texts = Vec::new();
+    // Build (id, text) pairs for situations. Trim and drop empties.
+    let mut sit_jobs: Vec<(uuid::Uuid, String)> = Vec::new();
     for s in &situations {
         if !body.force && s.embedding.is_some() {
             skipped += 1;
             continue;
         }
-        let text = s
-            .description
-            .as_deref()
-            .or_else(|| s.raw_content.first().map(|c| c.content.as_str()))
-            .or_else(|| s.name.as_deref())
-            .unwrap_or("unnamed");
-        sit_ids.push(s.id);
-        sit_texts.push(text.to_string());
+        // Build a richer text composed of name + description + first raw_content block.
+        let mut parts: Vec<&str> = Vec::new();
+        if let Some(n) = s.name.as_deref() {
+            if !n.trim().is_empty() {
+                parts.push(n);
+            }
+        }
+        if let Some(d) = s.description.as_deref() {
+            if !d.trim().is_empty() {
+                parts.push(d);
+            }
+        }
+        if let Some(rc) = s.raw_content.first() {
+            if !rc.content.trim().is_empty() {
+                parts.push(&rc.content);
+            }
+        }
+        let text = parts.join(" ").trim().to_string();
+        if text.is_empty() {
+            empty_skipped += 1;
+            continue;
+        }
+        sit_jobs.push((s.id, text));
     }
 
-    // Batch embed entities
-    let ent_refs: Vec<&str> = ent_texts.iter().map(|s| s.as_str()).collect();
-    let ent_embeddings = match embedder.embed_batch(&ent_refs) {
-        Ok(v) => v,
-        Err(e) => return error_response(e).into_response(),
-    };
-
-    // Batch embed situations
-    let sit_refs: Vec<&str> = sit_texts.iter().map(|s| s.as_str()).collect();
-    let sit_embeddings = match embedder.embed_batch(&sit_refs) {
-        Ok(v) => v,
-        Err(e) => return error_response(e).into_response(),
-    };
-
-    // Update entities
+    // Per-row embed: skip empties, catch errors, log via tracing, accumulate at most MAX_ERRORS.
     let mut entities_embedded: usize = 0;
-    for (id, emb) in ent_ids.iter().zip(ent_embeddings.iter()) {
-        if state
-            .hypergraph
-            .update_entity_no_snapshot(id, |e| {
-                e.embedding = Some(emb.clone());
-            })
-            .is_ok()
-        {
-            entities_embedded += 1;
+    for (id, text) in &ent_jobs {
+        match embedder.embed_text(text) {
+            Ok(emb) => {
+                if state
+                    .hypergraph
+                    .update_entity_no_snapshot(id, |e| {
+                        e.embedding = Some(emb.clone());
+                    })
+                    .is_ok()
+                {
+                    entities_embedded += 1;
+                    if let Some(vi) = &state.vector_index {
+                        if let Ok(mut idx) = vi.write() {
+                            let _ = idx.add(*id, &emb);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                failed += 1;
+                tracing::warn!("embedding_backfill: entity {} failed: {}", id, e);
+                if errors.len() < MAX_ERRORS {
+                    errors.push(serde_json::json!({
+                        "kind": "entity",
+                        "id": id.to_string(),
+                        "error": e.to_string(),
+                    }));
+                }
+            }
         }
     }
 
-    // Update situations
     let mut situations_embedded: usize = 0;
-    for (id, emb) in sit_ids.iter().zip(sit_embeddings.iter()) {
-        if state
-            .hypergraph
-            .update_situation(id, |s| {
-                s.embedding = Some(emb.clone());
-            })
-            .is_ok()
-        {
-            situations_embedded += 1;
+    for (id, text) in &sit_jobs {
+        match embedder.embed_text(text) {
+            Ok(emb) => {
+                if state
+                    .hypergraph
+                    .update_situation(id, |s| {
+                        s.embedding = Some(emb.clone());
+                    })
+                    .is_ok()
+                {
+                    situations_embedded += 1;
+                    if let Some(vi) = &state.vector_index {
+                        if let Ok(mut idx) = vi.write() {
+                            let _ = idx.add(*id, &emb);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                failed += 1;
+                tracing::warn!("embedding_backfill: situation {} failed: {}", id, e);
+                if errors.len() < MAX_ERRORS {
+                    errors.push(serde_json::json!({
+                        "kind": "situation",
+                        "id": id.to_string(),
+                        "error": e.to_string(),
+                    }));
+                }
+            }
         }
     }
 
-    // Add all to VectorIndex and persist
+    // Persist the updated vector index.
     if let Some(vi) = &state.vector_index {
-        if let Ok(mut idx) = vi.write() {
-            for (id, emb) in ent_ids.iter().zip(ent_embeddings.iter()) {
-                let _ = idx.add(*id, emb);
-            }
-            for (id, emb) in sit_ids.iter().zip(sit_embeddings.iter()) {
-                let _ = idx.add(*id, emb);
-            }
+        if let Ok(idx) = vi.read() {
             if let Err(e) = idx.save(state.hypergraph.store()) {
                 tracing::warn!("Failed to save vector index after backfill: {}", e);
             }
@@ -5317,7 +5697,191 @@ pub async fn embedding_backfill(
         "situations_embedded": situations_embedded,
         "total_updated": entities_embedded + situations_embedded,
         "skipped": skipped,
+        "empty_skipped": empty_skipped,
+        "failed": failed,
+        "errors": errors,
     }))
+}
+
+// ─── Location → Setting Backfill ────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct BackfillSettingsRequest {
+    /// When set, restricts the scan to one narrative; otherwise all
+    /// narratives in the workspace are scanned.
+    pub narrative_id: Option<String>,
+}
+
+/// POST /entities/backfill-settings — Add missing `Setting` participations.
+///
+/// Some narratives were ingested before the LLM extraction prompt enforced
+/// the rule "every Location appearing in a situation MUST be a participant
+/// with role Setting". For those narratives the Locations exist as entities
+/// but no Participation row ties them to the situations where they appear,
+/// so the Inspector's Relations tab on a Location shows nothing.
+///
+/// This deterministic backfill scans every situation's prose for any of
+/// each Location's name + alias terms (case-insensitive, ASCII-word-bounded
+/// match, terms < 3 chars skipped to avoid noise). When a match is found
+/// and no participation already exists for the (location, situation) pair,
+/// it inserts a fresh `Participation { role: Custom("Setting"), … }`.
+///
+/// Idempotent — re-running it after a partial pass only adds the
+/// still-missing rows. Pure data backfill, no LLM calls.
+pub async fn backfill_location_settings(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<BackfillSettingsRequest>,
+) -> impl IntoResponse {
+    let locations: Vec<Entity> = match &body.narrative_id {
+        Some(nid) => state
+            .hypergraph
+            .list_entities_by_narrative(nid)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|e| matches!(e.entity_type, EntityType::Location))
+            .collect(),
+        None => state
+            .hypergraph
+            .list_entities_by_type(&EntityType::Location)
+            .unwrap_or_default(),
+    };
+    let situations: Vec<Situation> = match &body.narrative_id {
+        Some(nid) => state
+            .hypergraph
+            .list_situations_by_narrative(nid)
+            .unwrap_or_default(),
+        None => state
+            .hypergraph
+            .list_situations_by_maturity(MaturityLevel::Candidate)
+            .unwrap_or_default(),
+    };
+
+    // Per-location term list: name + any string in `properties.aliases`.
+    // Terms shorter than 3 bytes are dropped — they trigger too many
+    // false-positive matches against ordinary words.
+    let candidates: Vec<(Uuid, Vec<String>)> = locations
+        .iter()
+        .map(|loc| {
+            let mut terms: Vec<String> = Vec::new();
+            if let Some(name) = loc.properties.get("name").and_then(|v| v.as_str()) {
+                terms.push(name.to_lowercase());
+            }
+            if let Some(arr) = loc.properties.get("aliases").and_then(|v| v.as_array()) {
+                for a in arr {
+                    if let Some(s) = a.as_str() {
+                        terms.push(s.to_lowercase());
+                    }
+                }
+            }
+            terms.retain(|t| t.len() >= 3);
+            (loc.id, terms)
+        })
+        .filter(|(_, terms)| !terms.is_empty())
+        .collect();
+
+    let mut links_created: usize = 0;
+    let mut skipped_existing: usize = 0;
+    let mut errors: Vec<String> = Vec::new();
+
+    for sit in &situations {
+        let mut hay = String::new();
+        if let Some(n) = &sit.name {
+            hay.push_str(n);
+            hay.push(' ');
+        }
+        if let Some(d) = &sit.description {
+            hay.push_str(d);
+            hay.push(' ');
+        }
+        if let Some(spat) = &sit.spatial {
+            if let Some(d) = &spat.description {
+                hay.push_str(d);
+                hay.push(' ');
+            }
+            if let Some(n) = &spat.location_name {
+                hay.push_str(n);
+                hay.push(' ');
+            }
+        }
+        for cb in &sit.raw_content {
+            hay.push_str(&cb.content);
+            hay.push(' ');
+        }
+        if hay.trim().is_empty() {
+            continue;
+        }
+        let hay_lower = hay.to_lowercase();
+
+        for (loc_id, terms) in &candidates {
+            // Already participates in any role → skip; the Inspector picks
+            // up the existing link without us creating a duplicate.
+            match state.hypergraph.get_participations_for_pair(loc_id, &sit.id) {
+                Ok(existing) if !existing.is_empty() => {
+                    skipped_existing += 1;
+                    continue;
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    errors.push(format!("pair {}↔{}: {}", loc_id, sit.id, e));
+                    continue;
+                }
+            }
+            let matched = terms.iter().any(|t| word_bounded_contains(&hay_lower, t));
+            if !matched {
+                continue;
+            }
+            let part = Participation {
+                entity_id: *loc_id,
+                situation_id: sit.id,
+                role: Role::Custom("Setting".into()),
+                info_set: None,
+                action: None,
+                payoff: None,
+                seq: 0,
+            };
+            match state.hypergraph.add_participant(part) {
+                Ok(()) => links_created += 1,
+                Err(e) => errors.push(format!("add {}↔{}: {}", loc_id, sit.id, e)),
+            }
+        }
+    }
+
+    json_ok(&serde_json::json!({
+        "locations_scanned": candidates.len(),
+        "situations_scanned": situations.len(),
+        "links_created": links_created,
+        "skipped_existing_pairs": skipped_existing,
+        "errors": errors,
+    }))
+}
+
+/// Case-insensitive substring match with ASCII word boundaries — the needle
+/// must be flanked by a non-alphanumeric ASCII byte (or be at the haystack
+/// edge). Both inputs are expected pre-lowercased. Multi-byte UTF-8 chars
+/// are treated as boundaries, which is fine for matching `paris` inside
+/// `château de paris,` — French diacritics are ≥0x80 bytes that
+/// `is_ascii_alphanumeric` rejects, keeping the boundary check sound.
+fn word_bounded_contains(hay: &str, needle: &str) -> bool {
+    if needle.is_empty() || hay.len() < needle.len() {
+        return false;
+    }
+    let bytes = hay.as_bytes();
+    let nlen = needle.len();
+    let mut start = 0usize;
+    while let Some(rel) = hay[start..].find(needle) {
+        let abs = start + rel;
+        let prev_ok = abs == 0 || !bytes[abs - 1].is_ascii_alphanumeric();
+        let after = abs + nlen;
+        let next_ok = after >= bytes.len() || !bytes[after].is_ascii_alphanumeric();
+        if prev_ok && next_ok {
+            return true;
+        }
+        start = abs + 1;
+        if start >= hay.len() {
+            break;
+        }
+    }
+    false
 }
 
 // ─── Job Lineage & Batch Chunk Operations ──────────────────────
@@ -6225,6 +6789,7 @@ mod situation_patch_tests {
                 location_entity: None,
                 location_name: Some("old location".into()),
                 description: None,
+                geo_provenance: None,
             }),
             game_structure: None,
             causes: vec![],
@@ -6276,6 +6841,10 @@ mod situation_patch_tests {
             label: None,
             status: None,
             keywords: None,
+            game_structure: None,
+            deterministic: None,
+            probabilistic: None,
+            properties: None,
         };
         let updated = hg
             .update_situation(&id, |s| {

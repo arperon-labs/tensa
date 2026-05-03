@@ -82,6 +82,8 @@ fn make_test_state() -> Arc<AppState> {
         #[cfg(feature = "studio-chat")]
         chat_mcp_proxies: Arc::new(crate::studio_chat::McpProxySet::new()),
         synth_registry: Arc::new(SurrogateRegistry::default()),
+        image_gen_config: std::sync::RwLock::new(crate::images::ImageGenConfig::None),
+        image_generator: std::sync::RwLock::new(None),
     })
 }
 

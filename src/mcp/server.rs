@@ -497,6 +497,32 @@ impl<B: McpBackend + Clone + 'static> TensaMcp<B> {
     }
 
     #[tool(
+        name = "update_situation",
+        description = "Update a situation by UUID. JSON 'updates' supports: 'properties' (merged), 'name', 'description', 'confidence' (0-1), 'narrative_id', 'synopsis', 'label', 'status', 'keywords' (array), and Sprint P4.2 enrichment slots 'game_structure', 'deterministic', 'probabilistic', 'temporal' (object to set, null to clear). Skill-friendly slot for analyses (scene-sequel, focalization, enrichment-backfill) that need per-row writes."
+    )]
+    async fn update_situation(
+        &self,
+        Parameters(req): Parameters<UpdateSituationRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        wrap(self.backend.update_situation(&req.id, req.updates).await)
+    }
+
+    #[tool(
+        name = "update_participation",
+        description = "Sprint P4.2 retro-enrichment — update an existing participation in place by (situation_id, entity_id, seq). 'updates' supports: 'info_set' (object with knows_before/learns/reveals/beliefs_about_others, or null to clear), 'payoff' (any JSON, or null), 'action' (string or null), 'role' (Protagonist/Antagonist/Witness/Target/Instrument/Confidant/Informant/Recipient/Bystander/SubjectOfDiscussion). Used by the `enrichment-backfill` analysis-type to fix the StyleProfile axes (Info R0, Power Asymmetry, Deception, Late Revelation) on archive-imported narratives."
+    )]
+    async fn update_participation(
+        &self,
+        Parameters(req): Parameters<UpdateParticipationRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        wrap(
+            self.backend
+                .update_participation(&req.situation_id, &req.entity_id, req.seq, req.updates)
+                .await,
+        )
+    }
+
+    #[tool(
         name = "list_entities",
         description = "List entities in the hypergraph. Filter by entity_type (Actor/Location/Artifact/Concept/Organization), narrative_id, and limit. Returns entity records with properties, confidence, and maturity."
     )]

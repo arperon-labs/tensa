@@ -26,21 +26,31 @@ use crate::api::routes::{error_response, json_ok};
 use crate::api::server::AppState;
 use crate::error::TensaError;
 use crate::fuzzy::aggregation::AggregatorKind;
+use crate::fuzzy::registry::TNormRegistry;
 use crate::fuzzy::rules::{
     build_rule, delete_rule, evaluate_rules_against_entity, list_rules, load_rule_fn, save_rule,
     validate_rule, FuzzyCondition, FuzzyOutput, Rule, RuleSetEvaluation,
 };
-use crate::fuzzy::tnorm::TNormKind;
 
 /// Body for `POST /fuzzy/rules`.
+///
+/// `tnorm` accepts the bare-string registry name (e.g. `"godel"`,
+/// `"goguen"`, `"lukasiewicz"`, `"hamacher"`) — the same shape used by
+/// `/fuzzy/aggregate`, `/fuzzy/hybrid/probability`, and `/fuzzy/quantify`.
+/// Unknown names surface as `InvalidInput → HTTP 400`. The
+/// adjacently-tagged `{"kind":"godel"}` form is also accepted for
+/// backward compatibility (handled below by trying the string path first
+/// and falling back to the enum form).
 #[derive(Debug, Deserialize)]
 pub struct CreateRuleBody {
     pub name: String,
     pub narrative_id: String,
     pub antecedent: Vec<FuzzyCondition>,
     pub consequent: FuzzyOutput,
+    /// Registry name of the t-norm used for firing-strength reduction.
+    /// `None` defaults to `godel`.
     #[serde(default)]
-    pub tnorm: Option<TNormKind>,
+    pub tnorm: Option<String>,
     #[serde(default)]
     pub enabled: Option<bool>,
 }
@@ -69,8 +79,14 @@ pub async fn create_rule(
         body.antecedent,
         body.consequent,
     );
-    if let Some(k) = body.tnorm {
-        rule.tnorm = k;
+    if let Some(name) = body.tnorm.as_deref() {
+        let trimmed = name.trim();
+        if !trimmed.is_empty() {
+            match TNormRegistry::default().get(trimmed) {
+                Ok(k) => rule.tnorm = k,
+                Err(e) => return error_response(e).into_response(),
+            }
+        }
     }
     if let Some(e) = body.enabled {
         rule.enabled = e;
@@ -179,18 +195,21 @@ pub async fn evaluate_rules_endpoint(
 
 /// Convenience — builder constructor used by tests so the rule-creation
 /// body can be exercised directly without going through axum.
-pub fn rule_from_body(body: &CreateRuleBody) -> Rule {
+pub fn rule_from_body(body: &CreateRuleBody) -> Result<Rule, TensaError> {
     let mut rule = build_rule(
         body.name.clone(),
         body.narrative_id.clone(),
         body.antecedent.clone(),
         body.consequent.clone(),
     );
-    if let Some(k) = body.tnorm {
-        rule.tnorm = k;
+    if let Some(name) = body.tnorm.as_deref() {
+        let trimmed = name.trim();
+        if !trimmed.is_empty() {
+            rule.tnorm = TNormRegistry::default().get(trimmed)?;
+        }
     }
     if let Some(e) = body.enabled {
         rule.enabled = e;
     }
-    rule
+    Ok(rule)
 }

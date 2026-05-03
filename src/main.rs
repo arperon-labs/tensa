@@ -231,6 +231,11 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
+    let image_gen_cfg = tensa::api::settings_routes::load_persisted_image_gen_config(
+        store.as_ref(),
+    )
+    .unwrap_or_default();
+
     let state = std::sync::Arc::new(tensa::api::server::AppState {
         hypergraph,
         interval_tree: std::sync::RwLock::new(interval_tree),
@@ -302,6 +307,10 @@ async fn main() -> anyhow::Result<()> {
             set
         },
         synth_registry: std::sync::Arc::new(tensa::synth::SurrogateRegistry::default()),
+        image_gen_config: std::sync::RwLock::new(image_gen_cfg.clone()),
+        image_generator: std::sync::RwLock::new(tensa::images::build_image_generator(
+            &image_gen_cfg,
+        )),
     });
 
     // Start inference worker pool with all engines registered.

@@ -1,6 +1,6 @@
 [package]
 name = "tensa"
-version = "0.79.6"
+version = "0.79.54"
 edition = "2021"
 description = "Narrative Tensor: multi-fidelity temporal hypergraph engine for multi-actor event systems"
 license = "MIT"
@@ -127,6 +127,9 @@ hmac = { version = "0.12", optional = true }
 # Web/RSS ingestion (Sprint P3.9 — feature-gated)
 scraper = { version = "0.20", optional = true }
 feed-rs = { version = "2", optional = true }
+
+# async fn in traits (image generators — needed for Arc<dyn ImageGenerator>)
+async-trait = "0.1"
 
 [dev-dependencies]
 tempfile = "3"

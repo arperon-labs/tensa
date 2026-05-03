@@ -9,7 +9,7 @@ use crate::api::{
     annotation_routes, architecture_routes, argumentation_gradual, bulk_routes, chunk_routes,
     collection_routes,
     compile_routes, continuity_routes, cost_ledger_routes, debug_routes, editing_routes, fuzzy,
-    generation_routes, import_routes, inference, openai_compat, openapi, plan_routes,
+    generation_routes, image_routes, import_routes, inference, openai_compat, openapi, plan_routes,
     project_routes, research_routes, revision_routes, routes, settings_routes, source_routes,
     storywriting_routes, style_routes, synth, template_routes, temporal_ordhorn,
     workshop_routes, workspace_routes,
@@ -416,6 +416,11 @@ pub struct AppState {
     /// re-instantiate via `SurrogateRegistry::default()` because that would
     /// drift from any registry the engines were built against.
     pub synth_registry: Arc<crate::synth::SurrogateRegistry>,
+    /// Image-generation provider config (persisted at `cfg/image_gen`).
+    pub image_gen_config: RwLock<crate::images::ImageGenConfig>,
+    /// Built image generator from `image_gen_config`. `None` for
+    /// `ImageGenConfig::None` or providers without a runtime client.
+    pub image_generator: RwLock<Option<Arc<dyn crate::images::ImageGenerator>>>,
 }
 
 /// Build the Axum router with all endpoints.
@@ -451,6 +456,14 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/situations/:id/participants",
             get(routes::get_participants),
+        )
+        // Sprint P4.2 retro-enrichment: PUT /situations/:sid/participants/:eid/:seq
+        // lets the `tensa-narrative-llm` skill (or a script) backfill `info_set`
+        // and `payoff` on archive-imported narratives that skipped the
+        // ingestion-time enrichment pass — without re-creating the participation.
+        .route(
+            "/situations/:sid/participants/:eid/:seq",
+            put(routes::update_participation),
         )
         .route(
             "/entities/:id/situations",
@@ -940,6 +953,27 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             "/settings/inference-llm",
             get(settings_routes::get_inference_llm).put(settings_routes::set_inference_llm),
         )
+        .route(
+            "/settings/image-gen",
+            get(image_routes::get_image_gen_config).put(image_routes::put_image_gen_config),
+        )
+        .route(
+            "/settings/image-gen/styles",
+            get(image_routes::get_image_styles),
+        )
+        .route(
+            "/entities/:id/images",
+            get(image_routes::list_entity_images_route)
+                .post(image_routes::upload_entity_image),
+        )
+        .route(
+            "/images/generate",
+            post(image_routes::generate_image),
+        )
+        .route(
+            "/images/:id",
+            get(image_routes::fetch_image).delete(image_routes::delete_image_route),
+        )
         // Project endpoints
         .route(
             "/projects",
@@ -1141,8 +1175,21 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // Geocoding endpoints
         .route("/geocode", post(routes::geocode_place))
         .route("/geocode/backfill", post(routes::geocode_backfill))
+        .route(
+            "/geocode/canonicalize-debug",
+            post(routes::geocode_canonicalize_debug),
+        )
+        .route(
+            "/geocode/canonicalize-batch-debug",
+            post(routes::geocode_canonicalize_batch_debug),
+        )
         // Embedding backfill
         .route("/embeddings/backfill", post(routes::embedding_backfill))
+        // Location → Setting participation backfill
+        .route(
+            "/entities/backfill-settings",
+            post(routes::backfill_location_settings),
+        )
         // OpenAI-compatible endpoints (Sprint RAG-6)
         .route(
             "/v1/chat/completions",

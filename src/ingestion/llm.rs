@@ -112,6 +112,58 @@ pub trait NarrativeExtractor: Send + Sync {
         ))
     }
 
+    /// Batch-canonicalize raw place strings using narrative-setting context.
+    ///
+    /// Default impl reuses `answer_question` so every LLM client that already
+    /// supports RAG also supports geocoding canonicalization without per-client
+    /// wiring. Mocks / NLP extractors that don't override `answer_question`
+    /// return an empty vec — geocoding then falls through to direct Nominatim.
+    fn canonicalize_places(
+        &self,
+        setting: &crate::ingestion::extraction::NarrativeSettingHint,
+        places: &[(String, String)],
+    ) -> Result<Vec<crate::ingestion::extraction::PlaceCanonicalization>> {
+        if places.is_empty() {
+            return Ok(vec![]);
+        }
+        let user_prompt = build_canonicalize_places_prompt(setting, places);
+        let raw = match self.answer_question(PLACE_CANONICALIZATION_PROMPT, &user_prompt) {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    requested = places.len(),
+                    "canonicalize_places: answer_question failed — falling back to direct Nominatim"
+                );
+                return Ok(vec![]);
+            }
+        };
+        match crate::ingestion::extraction::parse_canonicalize_places_response(&raw) {
+            Ok(rows) => {
+                if rows.len() < places.len() {
+                    let head: String = raw.chars().take(400).collect();
+                    tracing::warn!(
+                        count = rows.len(),
+                        requested = places.len(),
+                        head = %head,
+                        "canonicalize_places: LLM returned fewer rows than requested"
+                    );
+                } else {
+                    tracing::info!(
+                        count = rows.len(),
+                        requested = places.len(),
+                        "canonicalize_places: parsed LLM response"
+                    );
+                }
+                Ok(rows)
+            }
+            Err(_) => {
+                // Parse error already logged inside parse_canonicalize_places_response.
+                Ok(vec![])
+            }
+        }
+    }
+
     /// Return self as a session-capable extractor, if multi-turn is supported.
     /// Default returns None. Override in OpenRouterClient and LocalLLMClient.
     fn as_session(&self) -> Option<&dyn SessionCapableExtractor> {
@@ -2292,6 +2344,59 @@ pub fn build_enrichment_prompt(chunk: &TextChunk, extraction: &NarrativeExtracti
     prompt.push_str("\n[END TEXT]\n\n");
 
     prompt.push_str("Now produce deep annotations for the above structure. Focus on beliefs, strategic interactions, causal chains, information asymmetry, and narrative discourse. Return ONLY JSON.");
+    prompt
+}
+
+/// System prompt for batch place-name canonicalization.
+///
+/// Disambiguates raw place strings extracted from a narrative ("Marseilles",
+/// "Petersburg", "Cambridge") into modern canonical names + ISO country codes
+/// using narrative-setting context. Output is JSON-only so the parser can take it directly.
+pub const PLACE_CANONICALIZATION_PROMPT: &str = r#"You are a geographic disambiguation engine. Given a narrative's setting and a list of place strings as they appear in the text, return their modern canonical names and country codes so they can be geocoded.
+
+CRITICAL RULES:
+1. Output one row PER INPUT PLACE — do not skip rows you find easy or obvious. Skipping inflates work for the operator and breaks the join.
+2. Use the modern canonical place name (e.g. "Marseille" not "Marseilles", "Saint Petersburg" not "Petrograd"). Real city/region names only — never invent fictional toponyms.
+3. Country code must be ISO 3166-1 alpha-2, lowercase ("fr", "ru", "us").
+4. Pick the place that fits the narrative setting. "Marseilles" in a 19th-century French novel is Marseille, France — NOT Marseilles, Illinois. "Yanina" in Dumas is Ioannina, Greece — NOT Yanina, Argentina.
+5. Echo back the `uuid` and `raw_name` fields verbatim — they're the join key. Mismatched echoes are dropped silently.
+6. ONLY skip a place when (a) it is unambiguously fictional with no real-world counterpart, or (b) it is a generic noun ("the village", "the chapel") with no proper name. When in doubt, return your best guess with a low `confidence` value rather than dropping it.
+7. Return ONLY a JSON array — no prose, no markdown fences, no surrounding object.
+
+Output format:
+[
+  {"uuid": "...", "raw_name": "Marseilles", "canonical_name": "Marseille", "country_code": "fr", "admin_region": "Provence-Alpes-Côte d'Azur", "confidence": 0.95},
+  {"uuid": "...", "raw_name": "Petersburg", "canonical_name": "Saint Petersburg", "country_code": "ru", "confidence": 0.9},
+  {"uuid": "...", "raw_name": "Yanina", "canonical_name": "Ioannina", "country_code": "gr", "confidence": 0.85}
+]
+"#;
+
+/// Build the user-message body for `canonicalize_places`.
+pub fn build_canonicalize_places_prompt(
+    setting: &crate::ingestion::extraction::NarrativeSettingHint,
+    places: &[(String, String)],
+) -> String {
+    let mut prompt = String::new();
+    prompt.push_str("Narrative setting:\n");
+    if setting.setting.is_empty() {
+        prompt.push_str("(no setting context provided — disambiguate by best guess only if highly confident)\n\n");
+    } else {
+        prompt.push_str(&setting.setting);
+        prompt.push_str("\n");
+        if let Some(cc) = &setting.country_hint {
+            prompt.push_str(&format!("Default country if otherwise ambiguous: {}\n", cc));
+        }
+        prompt.push_str("\n");
+    }
+    prompt.push_str("Places to canonicalize:\n[\n");
+    for (uuid, raw) in places {
+        let raw_escaped = raw.replace('\\', "\\\\").replace('"', "\\\"");
+        prompt.push_str(&format!(
+            "  {{\"uuid\": \"{}\", \"raw_name\": \"{}\"}},\n",
+            uuid, raw_escaped
+        ));
+    }
+    prompt.push_str("]\n\nReturn ONLY the JSON array described in the system prompt.");
     prompt
 }
 

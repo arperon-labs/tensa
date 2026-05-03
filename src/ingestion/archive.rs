@@ -199,12 +199,17 @@ pub fn import_archive(
                     rel.target_situation = new_id;
                 }
             }
-            // Remap spatial location_entity
+            // Remap spatial location_entity + stamp geo_provenance for hard-fact coords
             if let Some(ref mut spatial) = situation.spatial {
                 if let Some(ref mut loc_ent) = spatial.location_entity {
                     if let Some(&new_id) = remap.get(loc_ent) {
                         *loc_ent = new_id;
                     }
+                }
+                // Archive-supplied lat/lng with no recorded provenance is treated as Source
+                // (came from the original archive author's data, not from runtime geocoding).
+                if spatial.latitude.is_some() && spatial.geo_provenance.is_none() {
+                    spatial.geo_provenance = Some(crate::types::GeoProvenance::Source);
                 }
             }
             // Remap discourse focalization
@@ -625,6 +630,48 @@ pub fn import_archive(
                 }
             }
         }
+
+        // ── Images layer — actor portraits ───────────────────
+        if manifest.layers.images {
+            if let Ok(index) = read_json_file::<Vec<serde_json::Value>>(
+                &mut archive,
+                &format!("{prefix}images/index.json"),
+            ) {
+                for entry in index {
+                    let Some(rec_value) = entry.get("record") else { continue };
+                    let Some(file_name) = entry.get("file").and_then(|v| v.as_str()) else {
+                        continue;
+                    };
+                    let Ok(mut record) =
+                        serde_json::from_value::<crate::images::ImageRecord>(rec_value.clone())
+                    else {
+                        report
+                            .warnings
+                            .push("Skipping unparseable image record".into());
+                        continue;
+                    };
+                    // Pull the bytes from the ZIP.
+                    let bytes_path = format!("{prefix}images/{file_name}");
+                    let Ok(bytes) = read_binary_file(&mut archive, &bytes_path) else {
+                        report
+                            .warnings
+                            .push(format!("Missing image bytes: {bytes_path}"));
+                        continue;
+                    };
+                    // Remap entity reference if its uuid was rewritten.
+                    if let Some(&new_eid) = remap.get(&record.entity_id) {
+                        record.entity_id = new_eid;
+                    }
+                    record.narrative_id = Some(final_slug.clone());
+                    record.bytes_len = bytes.len() as u64;
+                    if let Err(e) = crate::images::save_image(&*store, &record, &bytes) {
+                        report.warnings.push(format!("Image save: {e}"));
+                    } else {
+                        report.images_created += 1;
+                    }
+                }
+            }
+        }
     }
 
     // Build remap string map for report
@@ -889,6 +936,21 @@ fn read_json_file<T: serde::de::DeserializeOwned>(
         .map_err(|e| TensaError::Internal(format!("Failed to parse '{path}': {e}")))
 }
 
+/// Read raw bytes from the ZIP archive.
+fn read_binary_file(
+    archive: &mut zip::ZipArchive<Cursor<&[u8]>>,
+    path: &str,
+) -> Result<Vec<u8>> {
+    use std::io::Read as _;
+    let mut file = archive
+        .by_name(path)
+        .map_err(|e| TensaError::Internal(format!("Missing archive file '{path}': {e}")))?;
+    let mut buf = Vec::with_capacity(file.size() as usize);
+    file.read_to_end(&mut buf)
+        .map_err(|e| TensaError::Internal(format!("Failed to read '{path}': {e}")))?;
+    Ok(buf)
+}
+
 /// Remap entity references in knowledge facts.
 fn remap_knowledge_facts(remap: &HashMap<Uuid, Uuid>, facts: &mut [KnowledgeFact]) {
     for fact in facts {
@@ -1028,6 +1090,7 @@ mod tests {
             include_workshop_reports: false,
             include_narrative_plan: false,
             include_analysis_status: false,
+            include_images: false,
             pretty: true,
             include_synthetic: false,
         };
